@@ -1,0 +1,96 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+venv/
+ENV/
+env/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# 项目特定（关键：排除测试脚本和文档）
+test_*.py
+*_test.py
+extract_*.py
+verify_*.py
+run_*.sh
+test_*.sh
+
+# 文档文件（版本更新文件可以保留在一个独立文件夹）
+*.md
+!README.md
+!docs/**/*.md
+
+# API Keys（关键）
+.env
+*.env
+*api_key*
+*apikey*
+secrets/
+credentials/
+
+# 数据和临时文件
+*.log
+*.csv
+*.json.bak
+data/
+task_data/
+chat_history_items/
+
+# 排除编译文件
+*.pyc
+*.pyo
+
+# Exclude test artifacts
+.pytest_cache/
+.coverage/
+htmlcov/
+
+# Exclude JetBrains IDE
+.idea/
+
+# Exclude VS Code
+.vscode/
+
+# Exclude Jupyter Notebook
+.ipynb_checkpoints/
+
+# Exclude python type checking
+typeguard/
+
+# 保留配置文件
+!*.yaml
+!configs/**/*.yaml
+!benchmarks/**/*.yaml
+
+# 保留版本更新文档
+!version_docs/**/*.md
