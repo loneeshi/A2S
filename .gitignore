@@ -45,6 +45,9 @@ verify_*.py
 run_*.sh
 test_*.sh
 
+# 但保留scripts目录中的脚本
+!scripts/**/*.py
+
 # 文档文件（版本更新文件可以保留在一个独立文件夹）
 *.md
 !README.md

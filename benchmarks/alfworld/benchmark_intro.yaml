@@ -1,0 +1,77 @@
+benchmark:
+  name: "ALFWorld - Embodied AI for Interactive Tasks"
+  version: "1.0"
+  domain: "embodied_interaction"
+  difficulty: "high"
+
+description: >
+  ALFWorld (a benchmark for Aligning Large Food-surplus to Food-less World Environments)
+  is a benchmark for embodied AI that requires agents to complete household tasks
+  in interactive environments. Tasks include object manipulation, navigation, and
+  multi-step reasoning in realistic simulated environments.
+
+task_types:
+  - name: "object_manipulation"
+    complexity: "medium"
+    tools: ["env.pick_and_place", "env.open", "env.close", "env.clean"]
+    description: "Pick up, move, and manipulate objects in the environment"
+
+  - name: "navigation_exploration"
+    complexity: "medium"
+    tools: ["env.move", "env.look", "env.explore", "env.get_location"]
+    description: "Navigate and explore the environment to find objects"
+
+  - name: "multi_step_task"
+    complexity: "high"
+    tools: ["env.pick_and_place", "env.move", "env.open", "env.close", "env.look", "env.explore"]
+    description: "Complete complex tasks requiring multiple actions and reasoning"
+
+  - name: "object_search"
+    complexity: "medium"
+    tools: ["env.explore", "env.look", "env.get_location", "env.find_object"]
+    description: "Search for and locate specific objects in the environment"
+
+  - name: "task_planning"
+    complexity: "high"
+    tools: ["env.plan", "env.get_task_goal", "env.check_goal"]
+    description: "Plan and execute multi-step tasks to achieve goals"
+
+initial_skills:
+  - category: "manipulation"
+    skills: ["env.pick_and_place", "env.open", "env.close", "env.clean", "env.toggle"]
+
+  - category: "navigation"
+    skills: ["env.move", "env.look", "env.explore", "env.get_location"]
+
+  - category: "perception"
+    skills: ["env.look", "env.find_object", "env.get_visible_objects", "env.get_object_info"]
+
+  - category: "reasoning"
+    skills: ["env.plan", "env.get_task_goal", "env.check_goal", "env.get_next_action"]
+
+  - category: "interaction"
+    skills: ["env.pick_and_place", "env.open", "env.close", "env.toggle", "env.use_object"]
+
+suggested_architecture:
+  initial_workers: 6
+  initial_managers: 2
+  expansion_strategy: "performance_driven"
+  # Explanation:
+  # - 6 workers: Manipulation, Navigation, Perception, Reasoning, Interaction, Search specialists
+  # - 2 managers: Task coordinator, Performance monitor
+  # - performance_driven: Expand based on task success/failure patterns
+
+environment:
+  wrapper: "benchmarks.alfworld.environment.ALFWorldWrapper"
+  config_file: "benchmarks/alfworld/config.yaml"
+
+task_split_types:
+  - train: "Training tasks for learning"
+  - valid_in_distribution: "Validation tasks, in distribution"
+  - test_in_distribution: "Test tasks, in distribution"
+  - test_out_of_distribution: "Test tasks, out of distribution"
+
+episode_configuration:
+  max_steps: 100
+  reward_threshold: 0.9
+  timeout_seconds: 300
