@@ -1,0 +1,66 @@
+benchmark:
+  name: "StuLife - Student Life Campus"
+  version: "2.0"
+  domain: "campus_navigation"
+  difficulty: "medium"
+
+description: >
+  StuLife benchmark tests agent capabilities in a virtual university campus environment.
+  Agents must navigate buildings, manage emails, register for courses, handle calendar events,
+  and make reservations. Tasks require proper tool usage, constraint satisfaction, and
+  multi-step reasoning across different domains.
+
+task_types:
+  - name: "navigation"
+    complexity: "low"
+    tools: ["map.find_building_id", "geography.walk_to", "geography.get_current_location"]
+    description: "Simple navigation from current location to a destination"
+
+  - name: "multi_waypoint_navigation"
+    complexity: "high"
+    tools: ["map.find_optimal_path", "map.find_building_id", "geography.walk_to", "geography.get_current_location"]
+    description: "Navigate through multiple waypoints in specified order with constraints"
+
+  - name: "email_management"
+    complexity: "low"
+    tools: ["email.send", "email.search", "email.read"]
+    description: "Send, read, and search for emails"
+
+  - name: "course_registration"
+    complexity: "medium"
+    tools: ["course.search", "course.get_details", "course.check_prerequisites", "course.check_conflicts", "course.register"]
+    description: "Search for courses, check eligibility, and register"
+
+  - name: "complex_multitask"
+    complexity: "high"
+    tools: ["map.find_building_id", "geography.walk_to", "email.send", "course.register", "email.search"]
+    description: "Complete multiple related tasks across different domains"
+
+initial_skills:
+  - category: "navigation"
+    skills: ["map.find_building_id", "map.find_optimal_path", "geography.walk_to", "geography.get_current_location"]
+
+  - category: "email"
+    skills: ["email.send", "email.search", "email.read", "email.reply", "email.forward"]
+
+  - category: "course"
+    skills: ["course.search", "course.get_details", "course.check_prerequisites", "course.check_conflicts", "course.register", "course.drop"]
+
+  - category: "calendar"
+    skills: ["calendar.add_event", "calendar.search_events", "calendar.get_schedule"]
+
+  - category: "reservation"
+    skills: ["reservation.make", "reservation.check_availability", "reservation.cancel"]
+
+suggested_architecture:
+  initial_workers: 5
+  initial_managers: 2
+  expansion_strategy: "performance_driven"
+  # Explanation:
+  # - 5 workers: Navigation, Email, Course, Calendar, Reservation specialists
+  # - 2 managers: Task coordinator, Performance monitor
+  # - performance_driven: Expand based on task success/failure patterns
+
+environment:
+  wrapper: "benchmarks.stulife.environment.StuLifeCampus"
+  config_file: "benchmarks/stulife/config.yaml"
