@@ -16,6 +16,20 @@ from .description_reader import (
     list_available_benchmarks,
 )
 
+from .tree_builder import (
+    AgentTreeGenerator,
+    AgentDefinition,
+    AgentTree,
+    generate_tree,
+)
+
+from .env_explorer import (
+    EnvironmentExplorer,
+    ExplorationResult,
+    EpisodeResult,
+    GapAnalysis,
+)
+
 __all__ = [
     "BenchmarkDescriptionReader",
     "BenchmarkIntro",
@@ -25,4 +39,12 @@ __all__ = [
     "EnvironmentConfig",
     "read_benchmark_intro",
     "list_available_benchmarks",
+    "AgentTreeGenerator",
+    "AgentDefinition",
+    "AgentTree",
+    "generate_tree",
+    "EnvironmentExplorer",
+    "ExplorationResult",
+    "EpisodeResult",
+    "GapAnalysis",
 ]
