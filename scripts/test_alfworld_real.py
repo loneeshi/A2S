@@ -45,28 +45,31 @@ def try_import_alfworld():
         return False
 
 
-def create_alfworld_config(split='train'):
-    """Create ALFWorld configuration"""
-    import alfworld.agents.environment
+def create_alfworld_env(split='train'):
+    """Create ALFWorld environment using get_environment function"""
+    import alfworld.agents.environment as environment
 
-    config = {
-        'env': {
-            'type': 'AlfredTWEnv',
-            'num_clients': 1,
-        },
-        'dataset': {
-            'name': 'alfworld',
+    logger.info(f"Creating ALFWorld environment (split: {split})...")
+
+    try:
+        # Use the get_environment function discovered by API explorer
+        env = environment.get_environment({
             'split': split,
-        },
-        'scene': {
-            'type': 'train',
-        },
-        'task': {
-            'name': 'train',
-        },
-    }
+            'num_clients': 1,
+        })
+        logger.info("✅ ALFWorld environment created with get_environment()")
+        return env
+    except Exception as e:
+        logger.debug(f"get_environment failed: {e}")
 
-    return config
+        # Fallback: try with different parameter format
+        try:
+            env = environment.get_environment(split)
+            logger.info("✅ ALFWorld environment created with get_environment(split)")
+            return env
+        except Exception as e2:
+            logger.debug(f"get_environment(split) failed: {e2}")
+            raise Exception(f"All environment creation methods failed. First error: {e}")
 
 
 def test_real_alfworld(num_episodes=5, split='train'):
@@ -83,12 +86,7 @@ def test_real_alfworld(num_episodes=5, split='train'):
         logger.info("✅ ALFWorld imported successfully")
 
         # Create environment
-        logger.info(f"Creating ALFWorld environment (split: {split})...")
-
-        config = create_alfworld_config(split)
-
-        env = environment.AlfredTWEnv(config, train_eval='train')
-        env = env.init_env(batch_size=1)
+        env = create_alfworld_env(split)
 
         logger.info("✅ ALFWorld environment initialized")
 
@@ -96,6 +94,8 @@ def test_real_alfworld(num_episodes=5, split='train'):
         logger.error(f"❌ Failed to initialize ALFWorld: {e}")
         logger.info("\nNote: ALFWorld may require data files to be downloaded separately.")
         logger.info("Please refer to ALFWorld documentation for setup instructions.")
+        import traceback
+        traceback.print_exc()
         return False
 
     print_section("Phase 2: Generate Agent Tree")
