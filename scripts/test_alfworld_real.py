@@ -60,19 +60,29 @@ def create_alfworld_env(split='train'):
     }
     train_eval = split_mapping.get(split, 'train')
 
-    # Create complete config
+    # Create complete config with all required parameters
     config = {
         'env': {
             'type': 'AlfredTWEnv',
-            'goal_desc_human_anns_prob': 0,  # No human annotations
-            'task_types': [1],  # 1=pick_and_place_simple (can be 1-6)
+            'goal_desc_human_anns_prob': 0,
+            'task_types': [1],  # 1-6: pick_and_place_simple to pick_two_obj
+            'domain_randomization': False,  # No randomization for eval
+            'expert_type': 'handcoded',  # Use hardcoded expert
         },
         'dataset': {
-            'data_path': '~/.alfworld/alfred/data/json_2.1.1/train',
-            'eval_id_data_path': '~/.alfworld/alfred/data/json_2.1.1/valid_in_distribution',
-            'eval_ood_data_path': '~/.alfworld/alfred/data/json_2.1.1/valid_out_of_distribution',
-            'num_train_games': -1,  # -1 means use all available games
+            'data_path': '~/.cache/alfworld/json_2.1.1/train',
+            'eval_id_data_path': '~/.cache/alfworld/json_2.1.1/valid_train',
+            'eval_ood_data_path': '~/.cache/alfworld/json_2.1.1/valid_unseen',
+            'num_train_games': -1,
             'num_eval_games': -1,
+        },
+        'general': {
+            'training_method': 'dagger',  # Use dagger for interactive
+        },
+        'dagger': {
+            'training': {
+                'max_nb_steps_per_episode': 100,  # Max steps per episode
+            }
         }
     }
 
