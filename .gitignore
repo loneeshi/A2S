@@ -51,7 +51,6 @@ test_*.sh
 # 文档文件（版本更新文件可以保留在一个独立文件夹）
 *.md
 !README.md
-!docs/**/*.md
 
 # API Keys（关键）
 .env
@@ -63,11 +62,19 @@ credentials/
 
 # 数据和临时文件
 *.log
-*.csv
 *.json.bak
 data/
 task_data/
 chat_history_items/
+
+# Results directory (keep structure but ignore data files)
+results/*.json
+results/*.csv
+results/*/*.json
+results/*/*.csv
+!results/.gitkeep
+!results/*/.gitkeep
+!results/README.md
 
 # 排除编译文件
 *.pyc

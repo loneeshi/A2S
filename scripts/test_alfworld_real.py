@@ -135,6 +135,7 @@ def run_simulated_test(num_episodes=5):
 
     from core.generator import AgentTreeGenerator
     from core.optimizer import PerformanceMonitor, DynamicExtensionEngine, TaskResult, TaskStatus
+    from core.results import ResultsRecorder
     import random
 
     print_section("Simulated Test Mode")
@@ -146,7 +147,7 @@ def run_simulated_test(num_episodes=5):
 
     logger.info(f"✅ Generated {len(tree.workers)} workers and {len(tree.managers)} managers")
 
-    logger.info("Initializing performance monitor...")
+    logger.info("Initializing performance monitor and results recorder...")
 
     monitor = PerformanceMonitor(window_size=50)
     extension_engine = DynamicExtensionEngine(
@@ -154,11 +155,25 @@ def run_simulated_test(num_episodes=5):
         extension_threshold=0.7
     )
 
+    # Initialize results recorder
+    results_recorder = ResultsRecorder()
+    run_id = results_recorder.initialize_run(
+        benchmark_name="alfworld_simulated",
+        config={"mode": "simulated", "num_episodes": num_episodes},
+        tree_config={
+            "num_workers": len(tree.workers),
+            "num_managers": len(tree.managers),
+            "workers": [w.name for w in tree.workers],
+            "managers": [m.name for m in tree.managers]
+        }
+    )
+
     logger.info("Running simulated episodes...")
 
     task_types = ["object_manipulation", "navigation_exploration", "multi_step_task",
                    "object_search", "task_planning"]
 
+    success_count = 0
     for episode_id in range(num_episodes):
         task_type = random.choice(task_types)
         agent = random.choice(tree.workers)
@@ -175,6 +190,22 @@ def run_simulated_test(num_episodes=5):
 
         monitor.record_task_result(result)
 
+        # Record to results file
+        results_recorder.record_episode(
+            run_id=run_id,
+            episode_id=episode_id,
+            task_type=task_type,
+            agent_used=agent.name,
+            status="success" if success else "failure",
+            steps=int(random.uniform(5, 20)),
+            reward=1.0 if success else 0.0,
+            duration=result.duration,
+            error_message=result.error_message
+        )
+
+        if success:
+            success_count += 1
+
         if (episode_id + 1) % max(1, num_episodes // 5) == 0:
             recent = monitor.get_recent_performance(n=min(5, episode_id + 1))
             logger.info(f"  Episode {episode_id + 1}/{num_episodes} - Recent success rate: {recent['success_rate']:.2%}")
@@ -188,9 +219,14 @@ def run_simulated_test(num_episodes=5):
 
     print_section("Summary")
 
+    # Finalize and save results
+    logger.info("Saving results...")
+    benchmark_results = results_recorder.finalize_run(run_id)
+
     logger.info("🎉 Simulated test completed!")
     logger.info(f"Agents: {len(tree.workers)} workers, {len(tree.managers)} managers")
     logger.info(f"Success rate: {summary['overall_success_rate']:.2%}")
+    logger.info(f"\nResults saved to: results/alfworld_simulated/{run_id}.*")
 
     if monitor.should_trigger_extension(threshold=0.7):
         logger.info("\n⚠️  Extension would be triggered in real scenario")
@@ -237,9 +273,10 @@ def test_real_alfworld(num_episodes=5, split='train'):
 
     logger.info(f"✅ Generated {len(tree.workers)} workers and {len(tree.managers)} managers")
 
-    print_section("Phase 3: Initialize Performance Monitor")
+    print_section("Phase 3: Initialize Performance Monitor and Results Recorder")
 
     from core.optimizer import PerformanceMonitor, DynamicExtensionEngine, TaskResult, TaskStatus
+    from core.results import ResultsRecorder
 
     monitor = PerformanceMonitor(window_size=50)
     extension_engine = DynamicExtensionEngine(
@@ -247,7 +284,21 @@ def test_real_alfworld(num_episodes=5, split='train'):
         extension_threshold=0.7
     )
 
-    logger.info("✅ Performance monitor initialized")
+    # Initialize results recorder
+    results_recorder = ResultsRecorder()
+    run_id = results_recorder.initialize_run(
+        benchmark_name="alfworld",
+        config={"split": split, "num_episodes": num_episodes},
+        tree_config={
+            "num_workers": len(tree.workers),
+            "num_managers": len(tree.managers),
+            "workers": [w.name for w in tree.workers],
+            "managers": [m.name for m in tree.managers]
+        }
+    )
+
+    logger.info("✅ Performance monitor and results recorder initialized")
+    logger.info(f"Run ID: {run_id}")
 
     print_section("Phase 4: Run Real ALFWorld Episodes")
 
@@ -320,6 +371,18 @@ def test_real_alfworld(num_episodes=5, split='train'):
             )
             monitor.record_task_result(result)
 
+            # Record to results file
+            results_recorder.record_episode(
+                run_id=run_id,
+                episode_id=episode_idx,
+                task_type="alfworld_task",
+                agent_used=agent.name,
+                status="success" if episode_success else "failure",
+                steps=step,
+                reward=total_reward,
+                duration=step * 0.1
+            )
+
             if episode_success:
                 success_count += 1
 
@@ -338,6 +401,19 @@ def test_real_alfworld(num_episodes=5, split='train'):
                 error_message=str(e)
             )
             monitor.record_task_result(result)
+
+            # Record failure to results file
+            results_recorder.record_episode(
+                run_id=run_id,
+                episode_id=episode_idx,
+                task_type="alfworld_task",
+                agent_used=agent.name if agent else "Unknown",
+                status="failure",
+                steps=0,
+                reward=0.0,
+                duration=0.0,
+                error_message=str(e)
+            )
 
     logger.info(f"\n✅ Completed {num_episodes} real episodes")
     logger.info(f"Success rate: {success_count}/{num_episodes} ({success_count/num_episodes:.1%})")
@@ -360,12 +436,17 @@ def test_real_alfworld(num_episodes=5, split='train'):
 
     print_section("Summary")
 
+    # Finalize and save results
+    logger.info("Saving results...")
+    benchmark_results = results_recorder.finalize_run(run_id)
+
     logger.info("🎉 Real ALFWorld test completed!")
     logger.info(f"\nResults:")
     logger.info(f"   Episodes run: {num_episodes}")
     logger.info(f"   Success rate: {success_count/num_episodes:.1%}")
     logger.info(f"   Final workers: {len(tree.workers)}")
     logger.info(f"   Final managers: {len(tree.managers)}")
+    logger.info(f"\nResults saved to: results/alfworld/{run_id}.*")
 
     return True
 
