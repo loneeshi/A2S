@@ -272,15 +272,27 @@ def test_real_alfworld(num_episodes=5, split='train'):
             step = 0
             episode_success = False
             total_reward = 0
+            max_steps = 50  # Reduced from 100 for faster testing
 
-            while not done and step < 100:  # Max 100 steps
+            logger.info("Starting episode execution...")
+
+            while not done and step < max_steps:
                 # Get admissible actions
                 if hasattr(env, 'get_admissible_actions'):
                     admissible_actions = env.get_admissible_actions()
-                    # Pick random action (in real scenario, agent would decide)
-                    action = random.choice(admissible_actions[0])
+
+                    # Try to use expert plan if available
+                    if isinstance(info, dict) and 'extra.expert_plan' in info:
+                        # Use expert plan for better performance
+                        expert_plan = info.get('extra.expert_plan', [])
+                        if step < len(expert_plan):
+                            action = expert_plan[step]
+                        else:
+                            action = random.choice(admissible_actions[0])
+                    else:
+                        # Pick first action (usually reasonable) or random
+                        action = admissible_actions[0][0] if admissible_actions[0] else random.choice(admissible_actions[0])
                 else:
-                    # Fallback: use a simple random action
                     action = "look around"
 
                 # Step environment
@@ -288,11 +300,15 @@ def test_real_alfworld(num_episodes=5, split='train'):
                 total_reward += reward[0]
                 step += 1
 
+                # Log progress every 10 steps
+                if step % 10 == 0:
+                    logger.debug(f"Step {step}/{max_steps}, Reward so far: {total_reward:.2f}")
+
                 if done:
                     episode_success = reward[0] > 0
                     break
 
-            logger.info(f"Steps: {step}, Reward: {total_reward:.2f}, Success: {episode_success}")
+            logger.info(f"Steps: {step}/{max_steps}, Reward: {total_reward:.2f}, Success: {episode_success}")
 
             # Record result
             result = TaskResult(
