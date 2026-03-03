@@ -2,200 +2,86 @@
  * Graph Nodes - 增强版图节点定义
  *
  * 复刻 Swarm-IDE 风格的高密度 Agent 卡片
- * - Glassmorphism 毛玻璃效果
- * - 状态呼吸灯
- * - 实时 Metrics 显示
+ * - SPEC_v1.0 Obsidian/Deep-Space Aesthetic
+ * - 实时 Metrics 显示 (去黑箱化)
+ * - Liquid Flow 动态连线
  */
 
 import React from 'react';
-import { Handle, Position, NodeProps } from 'reactflow';
-import {
-  Brain,
-  Cpu,
-  CheckCircle2,
-  AlertCircle,
-  XCircle,
-  Zap,
-  Clock,
-  Database
-} from 'lucide-react';
+import { Handle, Position, NodeProps, EdgeProps, getBezierPath } from 'reactflow';
 import { motion } from 'framer-motion';
 
+// 基于 SPEC_v1.0 的状态芯片样式
+const StatusChip = ({ state }: { state: string }) => {
+  const configs: Record<string, string> = {
+    thinking: "border-brand-primary/40 text-brand-primary animate-pulse",
+    running: "border-brand-accent/40 text-brand-accent animate-bounce",
+    idle: "border-zinc-700 text-zinc-500",
+    completed: "border-green-500/40 text-green-500",
+    failed: "border-red-500/40 text-red-500"
+  };
+  return (
+    <div className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-mono border uppercase tracking-wider ${configs[state] || configs.idle}`}>
+      <span className={`w-1.5 h-1.5 rounded-full bg-current`} />
+      {state}
+    </div>
+  );
+};
+
 /**
- * Agent Node Component - 高密度信息卡片
+ * Agent Node Component - 高密度信息卡片 (SPEC_v1.0)
  */
 export const AgentNode: React.FC<NodeProps> = ({ data }) => {
   const {
     role,
     status,
-    llm_call_count,
     total_tokens_used,
-    isActive,
-    isSelected,
-    depth,
     llm_latency_ms,
-    cache_hit_rate,
+    id,
   } = data as any;
 
-  // 状态颜色配置 - 更丰富的渐变效果
-  const statusConfig = {
-    idle: {
-      bg: 'bg-gray-50/80 dark:bg-gray-800/60',
-      border: 'border-gray-300 dark:border-gray-600',
-      glow: 'shadow-gray-200/50 dark:shadow-gray-700/30',
-      text: 'text-gray-600 dark:text-gray-400',
-      statusColor: 'bg-gray-400',
-    },
-    thinking: {
-      bg: 'bg-yellow-50/80 dark:bg-yellow-900/30',
-      border: 'border-yellow-400 dark:border-yellow-600',
-      glow: 'shadow-yellow-200/60 dark:shadow-yellow-500/30',
-      text: 'text-yellow-700 dark:text-yellow-300',
-      statusColor: 'bg-yellow-400 animate-pulse',
-    },
-    running: {
-      bg: 'bg-blue-50/80 dark:bg-blue-900/30',
-      border: 'border-blue-400 dark:border-blue-500',
-      glow: 'shadow-blue-200/60 dark:shadow-blue-500/40',
-      text: 'text-blue-700 dark:text-blue-200',
-      statusColor: 'bg-blue-500 animate-pulse',
-    },
-    completed: {
-      bg: 'bg-green-50/80 dark:bg-green-900/30',
-      border: 'border-green-400 dark:border-green-600',
-      glow: 'shadow-green-200/60 dark:shadow-green-500/30',
-      text: 'text-green-700 dark:text-green-300',
-      statusColor: 'bg-green-500',
-    },
-    failed: {
-      bg: 'bg-red-50/80 dark:bg-red-900/30',
-      border: 'border-red-400 dark:border-red-600',
-      glow: 'shadow-red-200/60 dark:shadow-red-500/40',
-      text: 'text-red-700 dark:text-red-300',
-      statusColor: 'bg-red-500',
-    },
-  };
-
-  const config = statusConfig[status] || statusConfig.idle;
-
-  // Glassmorphism 效果
-  const glassmorphismStyle = {
-    backdropFilter: 'blur(12px)',
-    WebkitBackdropFilter: 'blur(12px)',
-    background: 'linear-gradient(135deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0.05) 100%)',
-  };
-
   return (
-    <motion.div
-      initial={{ scale: 0.9, opacity: 0 }}
-      animate={{ scale: 1, opacity: 1 }}
-      transition={{ type: "spring", stiffness: 300, damping: 25 }}
-      className={`
-        relative backdrop-blur-md rounded-xl border-2
-        min-w-[280px] cursor-pointer transition-all duration-300
-        ${config.bg} ${config.border}
-        ${isSelected ? 'ring-4 ring-blue-400/50 scale-105' : 'hover:scale-102'}
-        ${isActive ? config.glow : ''}
-        ${isActive ? 'animate-glow' : ''}
-      `}
-      style={glassmorphismStyle as any}
-    >
-      {/* Header 区：Role 图标和名称 */}
-      <div className="px-4 pt-3 pb-2 border-b border-gray-200/50 dark:border-gray-700/50">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-2 flex-1">
-            <div className={`p-1.5 rounded-lg ${config.bg.replace('/80', '/100')}`}>
-              <Brain className={`w-4 h-4 ${config.text}`} />
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className={`text-sm font-bold ${config.text} truncate`}>
-                {role}
-              </div>
-              <div className="text-xs text-gray-500 dark:text-gray-400">
-                Depth: {depth}
-              </div>
-            </div>
-          </div>
+    <div className="bg-brand-card p-4 rounded-xl border border-white/5 shadow-2xl min-w-[220px] font-sans transition-all duration-300 hover:border-brand-primary/30">
+      <Handle type="target" position={Position.Left} className="!w-2 !h-2 !bg-brand-primary !border-0 opacity-0 group-hover:opacity-100" />
 
-          {/* 状态指示灯：呼吸灯效果 */}
-          <div className={`
-            w-3 h-3 rounded-full ${config.statusColor}
-            shadow-[0_0_12px_currentColor]
-          `} />
+      {/* Header: Role & Status */}
+      <div className="flex justify-between items-start mb-4">
+        <div className="w-8 h-8 bg-brand-primary/10 rounded flex items-center justify-center border border-brand-primary/20">
+           <svg className="w-4 h-4 text-brand-primary" fill="currentColor" viewBox="0 0 24 24">
+             <path d="M12 2L2 19h20L12 2zm0 3.3l7.2 12.4H4.8L12 5.3z" />
+           </svg>
+        </div>
+        <StatusChip state={status || 'idle'} />
+      </div>
+
+      {/* Body: Agent Identity */}
+      <div className="mb-4">
+        <h3 className="text-sm font-bold text-white tracking-tight">{role}</h3>
+        <p className="text-[10px] text-brand-text font-mono mt-1 uppercase">ID: {id || 'N/A'}</p>
+      </div>
+
+      {/* Metrics: 去黑箱化关键数据 */}
+      <div className="grid grid-cols-2 gap-2 pt-3 border-t border-brand-border">
+        <div>
+          <p className="text-[9px] text-zinc-500 uppercase font-bold">Tokens</p>
+          <p className="text-xs font-mono text-brand-primary">{(total_tokens_used || 0).toLocaleString()}</p>
+        </div>
+        <div>
+          <p className="text-[9px] text-zinc-500 uppercase font-bold">Latency</p>
+          <p className="text-xs font-mono text-brand-accent">{llm_latency_ms ? `${llm_latency_ms.toFixed(0)}ms` : '0ms'}</p>
         </div>
       </div>
 
-      {/* 实时 Metrics 区 */}
-      <div className="px-4 py-3 space-y-2">
-        {/* Token 统计和 Latency */}
-        <div className="grid grid-cols-2 gap-2">
-          <div className="bg-white/40 dark:bg-gray-900/40 rounded-lg p-2 border border-gray-200/50 dark:border-gray-700/50">
-            <div className="flex items-center space-x-1 text-xs text-gray-600 dark:text-gray-400 mb-1">
-              <Zap className="w-3 h-3" />
-              <span>Tokens</span>
-            </div>
-            <div className={`text-sm font-mono font-bold ${config.text}`}>
-              {(total_tokens_used || 0).toLocaleString()}
-            </div>
-          </div>
-
-          <div className="bg-white/40 dark:bg-gray-900/40 rounded-lg p-2 border border-gray-200/50 dark:border-gray-700/50">
-            <div className="flex items-center space-x-1 text-xs text-gray-600 dark:text-gray-400 mb-1">
-              <Clock className="w-3 h-3" />
-              <span>Latency</span>
-            </div>
-            <div className={`text-sm font-mono font-bold ${config.text}`}>
-              {llm_latency_ms ? `${llm_latency_ms.toFixed(0)}ms` : 'N/A'}
-            </div>
-          </div>
-        </div>
-
-        {/* Cache 命中率 */}
-        {cache_hit_rate !== undefined && (
-          <div className="bg-white/40 dark:bg-gray-900/40 rounded-lg p-2 border border-gray-200/50 dark:border-gray-700/50">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-1 text-xs text-gray-600 dark:text-gray-400">
-                <Database className="w-3 h-3" />
-                <span>Cache Hit</span>
-              </div>
-              <div className={`
-                text-xs font-bold px-2 py-0.5 rounded
-                ${cache_hit_rate > 50 ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300' : 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300'}
-              `}>
-                {cache_hit_rate.toFixed(1)}%
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* LLM 调用次数 */}
-        <div className="flex items-center justify-between text-xs">
-          <span className="text-gray-600 dark:text-gray-400">LLM Calls:</span>
-          <span className={`font-mono font-semibold ${config.text}`}>
-            {llm_call_count || 0}
-          </span>
-        </div>
-
-        {/* 状态标签 */}
-        <div className={`
-          text-center py-1 px-2 rounded-lg text-xs font-semibold uppercase tracking-wide
-          ${config.bg} ${config.text}
-        `}>
-          {status}
-        </div>
-      </div>
-
-      {/* Input/Output Handles */}
-      <Handle type="target" position={Position.Left} className="!bg-blue-500 !w-3 !h-3 !border-2 !border-white" />
-      <Handle type="source" position={Position.Right} className="!bg-blue-500 !w-3 !h-3 !border-2 !border-white" />
-    </motion.div>
+      <Handle type="source" position={Position.Right} className="!w-2 !h-2 !bg-brand-primary !border-0 opacity-0 group-hover:opacity-100" />
+    </div>
   );
 };
 
 /**
- * Handoff Edge Component - 增强版流动动画
+ * Handoff Edge Component - Liquid Flow 增强版流动动画
  */
-const HandoffEdge: React.FC<any> = ({
+export const HandoffEdge: React.FC<EdgeProps> = ({
+  id,
   sourceX,
   sourceY,
   targetX,
@@ -204,72 +90,75 @@ const HandoffEdge: React.FC<any> = ({
   targetPosition,
   data,
 }) => {
-  const isAnimating = data?.isAnimating || false;
-  const messageSize = data?.context_size || 1; // 用于控制连线粗细
+  const [edgePath] = getBezierPath({
+    sourceX,
+    sourceY,
+    sourcePosition,
+    targetX,
+    targetY,
+    targetPosition,
+  });
 
-  // 计算路径（支持曲线）
-  const path = `M ${sourceX},${sourceY} L ${targetX},${targetY}`;
+  const isAnimating = data?.isAnimating;
 
   return (
     <g>
-      {/* 主连线 - 流光效果 */}
       <defs>
-        <linearGradient id={`gradient-${data?.handoff_id}`} x1="0%" y1="0%" x2="100%" y2="0%">
-          <stop offset="0%" stopColor={isAnimating ? '#3b82f6' : '#94a3b8'} stopOpacity={1} />
-          <stop offset="100%" stopColor={isAnimating ? '#8b5cf6' : '#94a3b8'} stopOpacity={1} />
+        <linearGradient id={`liquid-gradient-${id}`} x1="0%" y1="0%" x2="100%" y2="0%">
+          <stop offset="0%" stopColor="#3c83f6" stopOpacity="0.2" />
+          <stop offset="50%" stopColor="#a855f7" stopOpacity="0.6" />
+          <stop offset="100%" stopColor="#3c83f6" stopOpacity="0.2" />
         </linearGradient>
       </defs>
 
-      {/* 背景线 */}
+      {/* Background Shadow Line */}
       <path
-        d={path}
+        d={edgePath}
         fill="none"
-        stroke="#e2e8f0"
-        strokeWidth={Math.max(2, messageSize * 2)}
-        strokeDasharray="8 4"
-        className="dark:stroke-gray-700"
+        stroke="#27272a"
+        strokeWidth={3}
+        className="opacity-50"
       />
 
-      {/* 流光主线 */}
-      <path
-        d={path}
+      {/* Animated Flow Line */}
+      <motion.path
+        d={edgePath}
         fill="none"
-        stroke={`url(#gradient-${data?.handoff_id})`}
-        strokeWidth={Math.max(2, messageSize * 1.5)}
-        strokeDasharray="12 6"
-        className={isAnimating ? 'animate-pulse' : ''}
-        style={{
-          animation: isAnimating ? 'dash 1s linear infinite' : 'none',
+        stroke={`url(#liquid-gradient-${id})`}
+        strokeWidth={2}
+        initial={{ strokeDasharray: "10 5", strokeDashoffset: 0 }}
+        animate={isAnimating ? {
+          strokeDashoffset: [-20, 0],
+        } : {}}
+        transition={{
+          duration: 1.5,
+          repeat: Infinity,
+          ease: "linear",
         }}
-      >
-        {isAnimating && (
-          <animate
-            attributeName="stroke-dashoffset"
-            from="18"
-            to="0"
-            dur="1s"
-            repeatCount="indefinite"
-          />
-        )}
-      </path>
+        className="a2s-liquid-flow"
+      />
 
-      {/* 流动的粒子效果 */}
+      {/* Glow Particle */}
       {isAnimating && (
-        <circle r={4} fill="#3b82f6" className="opacity-80">
-          <animateMotion
-            dur="1.5s"
-            repeatCount="indefinite"
-            path={path}
-            keyPoints="0;1"
-            keyTimes="0;1"
-          />
-        </circle>
+        <motion.circle
+          r="3"
+          fill="#a855f7"
+          initial={{ offsetDistance: "0%" }}
+          animate={{ offsetDistance: "100%" }}
+          transition={{
+            duration: 2,
+            repeat: Infinity,
+            ease: "easeInOut",
+          }}
+          style={{ offsetPath: `path("${edgePath}")` }}
+          className="shadow-[0_0_8px_#a855f7]"
+        />
       )}
     </g>
   );
 };
 
-// Export node types and edge types AFTER component definitions
+// Export node types and edge types
 export const agentNodeTypes = {
   agentNode: AgentNode,
 };
