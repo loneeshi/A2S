@@ -1,0 +1,61 @@
+Benchmark: alfworld_simulated
+Run ID: alfworld_simulated_2026-03-02T14-32-57-692800
+Timestamp: 2026-03-02T14:32:57.692800
+
+=== Summary ===
+
+Total Episodes: 20
+Successful: 13
+Failed: 7
+Success Rate: 65.00%
+
+=== Agent Performance ===
+
+ReasoningWorker:
+  Total: 5
+  Success: 3
+  Failed: 2
+  Success Rate: 60.00%
+NavigationWorker:
+  Total: 5
+  Success: 4
+  Failed: 1
+  Success Rate: 80.00%
+InteractionWorker:
+  Total: 3
+  Success: 2
+  Failed: 1
+  Success Rate: 66.67%
+ManipulationWorker:
+  Total: 3
+  Success: 2
+  Failed: 1
+  Success Rate: 66.67%
+PerceptionWorker:
+  Total: 4
+  Success: 2
+  Failed: 2
+  Success Rate: 50.00%
+
+=== Task Type Performance ===
+
+object_manipulation:
+  Total: 5
+  Success: 3
+  Success Rate: 60.00%
+object_search:
+  Total: 4
+  Success: 1
+  Success Rate: 25.00%
+task_planning:
+  Total: 5
+  Success: 4
+  Success Rate: 80.00%
+navigation_exploration:
+  Total: 2
+  Success: 1
+  Success Rate: 50.00%
+multi_step_task:
+  Total: 4
+  Success: 4
+  Success Rate: 100.00%

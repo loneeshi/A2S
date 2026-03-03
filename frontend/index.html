@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Agent Visualization - De-blackboxing Swarm Systems</title>
+    <meta name="description" content="Professional visualization for agent execution tracing with prompt caching analysis" />
+
+    <style>
+      /* Debug styles */
+      #debug-console {
+        position: fixed;
+        top: 10px;
+        right: 10px;
+        width: 400px;
+        max-height: 300px;
+        background: rgba(0, 0, 0, 0.9);
+        color: #0f0;
+        font-family: monospace;
+      font-size: 12px;
+        padding: 10px;
+        border-radius: 8px;
+        z-index: 9999;
+        overflow-y: auto;
+        display: block;
+      }
+      #debug-console .log-entry {
+        margin: 4px 0;
+        padding: 4px;
+        border-left: 2px solid #0f0;
+        padding-left: 8px;
+      }
+      #debug-console .error {
+        color: #f44;
+        border-left-color: #f44;
+      }
+      #debug-console .success {
+        color: #4f4;
+      }
+      #debug-toggle {
+        position: fixed;
+        top: 10px;
+        right: 420px;
+        z-index: 10000;
+        background: #333;
+        color: white;
+        border: none;
+        padding: 8px 12px;
+        border-radius: 4px;
+        cursor: pointer;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="debug-console">
+      <div class="log-entry success">✅ Debug console initialized</div>
+    </div>
+    <button id="debug-toggle" onclick="toggleDebug()">Hide Debug</button>
+    <div id="root"></div>
+
+    <script>
+      const debugConsole = document.getElementById('debug-console');
+      const debugToggle = document.getElementById('debug-toggle');
+
+      function log(msg, type = 'info') {
+        const entry = document.createElement('div');
+        entry.className = 'log-entry ' + type;
+        entry.textContent = msg;
+        debugConsole.appendChild(entry);
+        debugConsole.scrollTop = debugConsole.scrollHeight;
+        console.log(`[${type}]`, msg);
+      }
+
+      function toggleDebug() {
+        if (debugConsole.style.display === 'none') {
+          debugConsole.style.display = 'block';
+          debugToggle.textContent = 'Hide Debug';
+        } else {
+          debugConsole.style.display = 'none';
+          debugToggle.textContent = 'Show Debug';
+        }
+      }
+
+      // Catch all errors
+      window.addEventListener('error', (e) => {
+        log(`❌ ERROR: ${e.message}`, 'error');
+        if (e.filename) log(`   at ${e.filename}:${e.lineno}`, 'error');
+      });
+
+      window.addEventListener('unhandledrejection', (e) => {
+        log(`❌ Promise Error: ${e.reason}`, 'error');
+      });
+
+      log('📦 Loading modules...', 'info');
+
+      // Monitor when React loads
+      let loadTimeout = setTimeout(() => {
+        log('⏱️ Still loading after 5s...', 'error');
+      }, 5000);
+
+      window.addEventListener('load', () => {
+        clearTimeout(loadTimeout);
+        log('✅ Window loaded successfully', 'success');
+      });
+    </script>
+
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

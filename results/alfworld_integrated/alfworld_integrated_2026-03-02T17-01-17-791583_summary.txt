@@ -1,0 +1,25 @@
+Benchmark: alfworld_integrated
+Run ID: alfworld_integrated_2026-03-02T17-01-17-791583
+Timestamp: 2026-03-02T17:01:17.791583
+
+=== Summary ===
+
+Total Episodes: 1
+Successful: 0
+Failed: 1
+Success Rate: 0.00%
+
+=== Agent Performance ===
+
+ALFWorldAgent:
+  Total: 1
+  Success: 0
+  Failed: 1
+  Success Rate: 0.00%
+
+=== Task Type Performance ===
+
+alfworld_llm:
+  Total: 1
+  Success: 0
+  Success Rate: 0.00%

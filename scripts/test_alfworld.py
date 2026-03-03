@@ -28,6 +28,7 @@ from core.optimizer import (
     TaskResult,
     TaskStatus,
 )
+from core.recorder import ResultsRecorder
 
 # Setup logging
 logging.basicConfig(
@@ -77,7 +78,7 @@ def test_alfworld_benchmark():
     for manager in tree.managers:
         logger.info(f"   - {manager.name}: {manager.metadata.get('type', 'N/A')}")
 
-    print_section("Phase 3: Initialize Performance Monitor")
+    print_section("Phase 3: Initialize Performance Monitor and Results Recorder")
 
     # Step 3: Setup performance monitoring
     monitor = PerformanceMonitor(window_size=50)
@@ -91,14 +92,29 @@ def test_alfworld_benchmark():
     logger.info(f"   Extension threshold: 70% success rate")
     logger.info(f"   Window size: 50 tasks")
 
-    print_section("Phase 4: Run Test Episodes")
-
-    # Step 4: Run simulated test episodes
+    # Get task types and episode count for results recorder config
     import random
-
     task_types = [task.name for task in intro.task_types]
     num_episodes = 20
 
+    # Initialize results recorder
+    results_recorder = ResultsRecorder()
+    run_id = results_recorder.initialize_run(
+        benchmark_name="alfworld_simulated",
+        config={"num_episodes": num_episodes},
+        tree_config={
+            "num_workers": len(tree.workers),
+            "num_managers": len(tree.managers),
+            "workers": [w.name for w in tree.workers],
+            "managers": [m.name for m in tree.managers]
+        }
+    )
+    logger.info(f"✅ Results recorder initialized")
+    logger.info(f"   Run ID: {run_id}")
+
+    print_section("Phase 4: Run Test Episodes")
+
+    # Step 4: Run simulated test episodes
     logger.info(f"Running {num_episodes} test episodes...")
 
     for episode_id in range(num_episodes):
@@ -119,6 +135,19 @@ def test_alfworld_benchmark():
         )
 
         monitor.record_task_result(result)
+
+        # Record to results file
+        results_recorder.record_episode(
+            run_id=run_id,
+            episode_id=episode_id,
+            task_type=task_type,
+            agent_used=agent.name,
+            status="success" if success else "failure",
+            steps=int(random.uniform(5, 20)),
+            reward=1.0 if success else 0.0,
+            duration=result.duration,
+            error_message=result.error_message
+        )
 
         # Print progress every 5 episodes
         if (episode_id + 1) % 5 == 0:
@@ -189,11 +218,16 @@ def test_alfworld_benchmark():
 
     print_section("Summary")
 
+    # Finalize and save results
+    logger.info("Saving results...")
+    benchmark_results = results_recorder.finalize_run(run_id)
+
     logger.info("🎉 ALFWorld benchmark test completed!")
     logger.info(f"\nFinal tree configuration:")
     logger.info(f"   Workers: {len(tree.workers)}")
     logger.info(f"   Managers: {len(tree.managers)}")
     logger.info(f"   Overall success rate: {monitor.get_overall_success_rate():.2%}")
+    logger.info(f"\nResults saved to: results/alfworld_simulated/{run_id}.*")
 
     logger.info(f"\nNext steps:")
     logger.info(f"   1. Implement actual ALFWorld environment integration")

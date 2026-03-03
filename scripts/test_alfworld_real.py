@@ -28,6 +28,17 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Enable ALFWorld/THOR detailed logging for render progress
+import os
+os.environ['THOR_CPU_THREADS'] = '1'  # Limit CPU threads for stability
+os.environ['ALFWORLD_LOAD_LOGS'] = '1'  # Enable loading logs
+
+# Configure ALFWorld logger to show initialization progress
+alfworld_logger = logging.getLogger('alfworld')
+alfworld_logger.setLevel(logging.INFO)
+thor_logger = logging.getLogger('thor')
+thor_logger.setLevel(logging.INFO)
+
 
 def try_import_alfworld():
     """Try to import ALFWorld and provide helpful error if not installed"""
@@ -61,6 +72,7 @@ def create_alfworld_env(split='train'):
     train_eval = split_mapping.get(split, 'train')
 
     # Create complete config with all required parameters
+    # Based on Agent_to_Skills configuration for optimal performance
     config = {
         'env': {
             'type': 'AlfredTWEnv',
@@ -68,6 +80,7 @@ def create_alfworld_env(split='train'):
             'task_types': [1],  # 1-6: pick_and_place_simple to pick_two_obj
             'domain_randomization': False,  # No randomization for eval
             'expert_type': 'handcoded',  # Use hardcoded expert
+            'expert_timeout_steps': 150,  # Timeout for expert
         },
         'dataset': {
             'data_path': '~/.cache/alfworld/json_2.1.1/train',
@@ -76,12 +89,41 @@ def create_alfworld_env(split='train'):
             'num_train_games': -1,
             'num_eval_games': -1,
         },
+        'logic': {
+            'domain': 'logic/alfred.pddl',
+            'grammar': 'logic/alfred.twl2'
+        },
+        'controller': {
+            'type': 'oracle',
+            'debug': False,
+            'load_receps': True
+        },
         'general': {
-            'training_method': 'dagger',  # Use dagger for interactive
+            'random_seed': 42,
+            'use_cuda': False,  # CRITICAL: Disable CUDA to avoid long GPU initialization
+            'task': 'alfred',
+            'training_method': 'dagger',
+            'observation_pool_capacity': 3,
+            'hide_init_receptacles': False
         },
         'dagger': {
+            'action_space': 'generation',
+            'max_target_length': 20,
+            'beam_width': 10,
+            'generate_top_k': 5,
+            'unstick_by_beam_search': False,
             'training': {
-                'max_nb_steps_per_episode': 100,  # Max steps per episode
+                'max_nb_steps_per_episode': 50  # Max steps per episode
+            },
+            'fraction_assist': {
+                'fraction_assist_anneal_episodes': 50000,
+                'fraction_assist_anneal_from': 1.0,
+                'fraction_assist_anneal_to': 0.01
+            },
+            'fraction_random': {
+                'fraction_random_anneal_episodes': 0,
+                'fraction_random_anneal_from': 0.0,
+                'fraction_random_anneal_to': 0.0
             }
         }
     }
@@ -100,18 +142,29 @@ def create_alfworld_env(split='train'):
 
     try:
         # Get environment class
+        logger.info("Step 1/3: Loading AlfredTWEnv class...")
         env_class = environment.get_environment('AlfredTWEnv')
-        logger.info("✅ Got AlfredTWEnv class")
+        logger.info("✅ Step 1/3: Environment class loaded")
 
         # Instantiate environment
-        logger.info(f"Initializing with train_eval={train_eval}...")
+        logger.info("Step 2/3: Instantiating environment (this loads Unity 3D engine)...")
+        logger.info("   - Loading 3D scenes and objects...")
+        logger.info("   - Initializing physics engine...")
+        import time
+        start = time.time()
         env = env_class(config, train_eval=train_eval)
-        logger.info("✅ Environment instantiated")
+        elapsed = time.time() - start
+        logger.info(f"✅ Step 2/3: Environment instantiated in {elapsed:.2f}s")
 
         # Initialize batch
-        logger.info("Calling init_env(batch_size=1)...")
+        logger.info("Step 3/3: Initializing environment batch...")
+        logger.info("   - Setting up batch processing...")
+        logger.info("   - Preparing first episode...")
+        start = time.time()
         env = env.init_env(batch_size=1)
-        logger.info("✅ Environment initialized and ready")
+        elapsed = time.time() - start
+        logger.info(f"✅ Step 3/3: Batch initialized in {elapsed:.2f}s")
+        logger.info("✅ Environment fully initialized and ready")
 
         return env
 
@@ -135,7 +188,7 @@ def run_simulated_test(num_episodes=5):
 
     from core.generator import AgentTreeGenerator
     from core.optimizer import PerformanceMonitor, DynamicExtensionEngine, TaskResult, TaskStatus
-    from core.results import ResultsRecorder
+    from core.recorder import ResultsRecorder
     import random
 
     print_section("Simulated Test Mode")
@@ -273,10 +326,16 @@ def test_real_alfworld(num_episodes=5, split='train'):
 
     logger.info(f"✅ Generated {len(tree.workers)} workers and {len(tree.managers)} managers")
 
-    print_section("Phase 3: Initialize Performance Monitor and Results Recorder")
+    print_section("Phase 3: Initialize LLM Agent, Performance Monitor and Results Recorder")
 
     from core.optimizer import PerformanceMonitor, DynamicExtensionEngine, TaskResult, TaskStatus
-    from core.results import ResultsRecorder
+    from core.recorder import ResultsRecorder
+    from core.llm import ALFWorldAgent
+
+    # Initialize LLM agent for action selection
+    logger.info("Initializing LLM agent for ALFWorld...")
+    llm_agent = ALFWorldAgent(model="gemini-2.5-flash")
+    logger.info("✅ LLM agent initialized")
 
     monitor = PerformanceMonitor(window_size=50)
     extension_engine = DynamicExtensionEngine(
@@ -288,7 +347,7 @@ def test_real_alfworld(num_episodes=5, split='train'):
     results_recorder = ResultsRecorder()
     run_id = results_recorder.initialize_run(
         benchmark_name="alfworld",
-        config={"split": split, "num_episodes": num_episodes},
+        config={"split": split, "num_episodes": num_episodes, "model": "gemini-2.5-flash"},
         tree_config={
             "num_workers": len(tree.workers),
             "num_managers": len(tree.managers),
@@ -300,23 +359,59 @@ def test_real_alfworld(num_episodes=5, split='train'):
     logger.info("✅ Performance monitor and results recorder initialized")
     logger.info(f"Run ID: {run_id}")
 
-    print_section("Phase 4: Run Real ALFWorld Episodes")
+    print_section("Phase 4: Environment Warm-up")
+
+    logger.info("⏳ Performing warm-up reset to cache 3D assets...")
+    logger.info("(This includes: loading scene, textures, objects, physics)")
+    import time
+    warmup_start = time.time()
+    try:
+        logger.info("   → Resetting environment...")
+        env.reset()
+        warmup_elapsed = time.time() - warmup_start
+        logger.info(f"✅ Warm-up completed in {warmup_elapsed:.2f}s")
+        if warmup_elapsed < 5:
+            logger.info(f"   🚀 Excellent! Reset is fast ({warmup_elapsed:.2f}s < 5s)")
+        elif warmup_elapsed < 10:
+            logger.info(f"   ✓ Good performance ({warmup_elapsed:.2f}s)")
+        else:
+            logger.warning(f"   ⚠️  Reset is slow ({warmup_elapsed:.2f}s > 10s)")
+        logger.info("   Subsequent resets should be similar or faster")
+    except Exception as e:
+        logger.warning(f"⚠️  Warm-up failed: {e}")
+        logger.warning("   Continuing anyway...")
+
+    print_section("Phase 5: Run Real ALFWorld Episodes")
 
     import numpy as np
 
     success_count = 0
     for episode_idx in range(num_episodes):
         try:
-            logger.info(f"\n--- Episode {episode_idx + 1}/{num_episodes} ---")
+            logger.info(f"\n{'#'*60}")
+            logger.info(f"# Episode {episode_idx + 1}/{num_episodes}")
+            logger.info(f"{'#'*60}")
 
             # Reset environment
+            logger.info("⏳ Resetting environment...")
+            import time
+            reset_start = time.time()
             obs, info = env.reset()
+            reset_elapsed = time.time() - reset_start
+            logger.info(f"✅ Environment reset in {reset_elapsed:.2f}s")
+
             logger.info(f"Task: {info.get('extra.task_desc', 'Unknown')}")
             logger.info(f"Observation: {obs[0][:100]}...")
 
             # Select a worker agent (random for now)
             import random
             agent = random.choice(tree.workers)
+            logger.info(f"Selected agent: {agent.name}")
+
+            # Reset LLM agent for new episode
+            logger.info("⏳ Resetting LLM agent conversation history...")
+            llm_agent.reset()
+            logger.info("✅ LLM agent reset")
 
             # Run episode
             done = False
@@ -325,35 +420,67 @@ def test_real_alfworld(num_episodes=5, split='train'):
             total_reward = 0
             max_steps = 50  # Reduced from 100 for faster testing
 
-            logger.info("Starting episode execution...")
+            logger.info(f"\n🎬 Starting episode execution (max {max_steps} steps)...")
 
             while not done and step < max_steps:
                 # Get admissible actions
                 if hasattr(env, 'get_admissible_actions'):
-                    admissible_actions = env.get_admissible_actions()
+                    logger.info(f"\n{'='*60}")
+                    logger.info(f"Step {step+1}/{max_steps}")
+                    logger.info(f"{'='*60}")
 
-                    # Try to use expert plan if available
-                    if isinstance(info, dict) and 'extra.expert_plan' in info:
-                        # Use expert plan for better performance
-                        expert_plan = info.get('extra.expert_plan', [])
-                        if step < len(expert_plan):
-                            action = expert_plan[step]
-                        else:
-                            action = random.choice(admissible_actions[0])
-                    else:
-                        # Pick first action (usually reasonable) or random
-                        action = admissible_actions[0][0] if admissible_actions[0] else random.choice(admissible_actions[0])
+                    # Time the get_admissible_actions call
+                    logger.info("⏳ Calling env.get_admissible_actions()...")
+                    import time
+                    start_time = time.time()
+                    admissible_actions = env.get_admissible_actions()
+                    elapsed = time.time() - start_time
+                    logger.info(f"✅ get_admissible_actions() completed in {elapsed:.2f}s")
+                    logger.info(f"   Number of action lists: {len(admissible_actions)}")
+                    logger.info(f"   Actions in first list: {len(admissible_actions[0]) if admissible_actions else 0}")
+
+                    # Use LLM agent to select action
+                    task_desc = info.get('extra.task_desc', 'Complete the task')
+                    observation = obs[0] if isinstance(obs, list) else obs
+
+                    logger.info(f"\n⏳ Calling LLM agent to select action...")
+                    logger.info(f"   Task: {task_desc[:100]}...")
+                    logger.info(f"   Observation: {observation[:100]}...")
+                    logger.info(f"   Available actions: {len(admissible_actions[0]) if admissible_actions else 0} actions")
+
+                    try:
+                        llm_start = time.time()
+                        action = llm_agent.select_action(
+                            observation=observation,
+                            task_description=task_desc,
+                            admissible_actions=admissible_actions[0] if admissible_actions else ["look around"]
+                        )
+                        llm_elapsed = time.time() - llm_start
+                        logger.info(f"✅ LLM agent selected action in {llm_elapsed:.2f}s")
+                        logger.info(f"   Action: {action}")
+                    except Exception as e:
+                        logger.error(f"❌ LLM action selection failed: {e}")
+                        logger.error(f"   Falling back to first available action")
+                        import traceback
+                        traceback.print_exc()
+                        action = admissible_actions[0][0] if admissible_actions and admissible_actions[0] else "look around"
                 else:
+                    logger.warning("Environment doesn't have get_admissible_actions method")
                     action = "look around"
 
                 # Step environment
+                logger.info(f"⏳ Stepping environment with action: {action[:50]}...")
+                step_start = time.time()
                 obs, reward, done, info = env.step([action])
+                step_elapsed = time.time() - step_start
+                logger.info(f"✅ Environment step completed in {step_elapsed:.2f}s")
+
                 total_reward += reward[0]
                 step += 1
 
                 # Log progress every 10 steps
                 if step % 10 == 0:
-                    logger.debug(f"Step {step}/{max_steps}, Reward so far: {total_reward:.2f}")
+                    logger.info(f"Step {step}/{max_steps}, Reward so far: {total_reward:.2f}")
 
                 if done:
                     episode_success = reward[0] > 0
@@ -418,14 +545,14 @@ def test_real_alfworld(num_episodes=5, split='train'):
     logger.info(f"\n✅ Completed {num_episodes} real episodes")
     logger.info(f"Success rate: {success_count}/{num_episodes} ({success_count/num_episodes:.1%})")
 
-    print_section("Phase 5: Performance Analysis")
+    print_section("Phase 6: Performance Analysis")
 
     summary = monitor.get_summary()
     logger.info(f"Overall Performance:")
     logger.info(f"   Total tasks: {summary['total_tasks']}")
     logger.info(f"   Overall success rate: {summary['overall_success_rate']:.2%}")
 
-    print_section("Phase 6: Dynamic Extension (if needed)")
+    print_section("Phase 7: Dynamic Extension (if needed)")
 
     if monitor.should_trigger_extension(threshold=0.7):
         logger.info("⚠️  Performance threshold breached - applying extensions...")

@@ -58,15 +58,18 @@ class AgentTreeGenerator:
 
     def __init__(
         self,
-        description_reader: Optional[BenchmarkDescriptionReader] = None
+        description_reader: Optional[BenchmarkDescriptionReader] = None,
+        runtime: Optional['AgentRuntime'] = None  # type: ignore
     ):
         """
         Initialize the tree generator
 
         Args:
             description_reader: Reader for benchmark intros. If None, creates default.
+            runtime: Optional AgentRuntime for deploying agents
         """
         self.description_reader = description_reader or BenchmarkDescriptionReader()
+        self.runtime = runtime
 
     def generate_initial_tree(self, benchmark_name: str) -> AgentTree:
         """
@@ -109,6 +112,134 @@ class AgentTreeGenerator:
         )
 
         return tree
+
+    async def deploy_tree(
+        self,
+        tree: AgentTree,
+        workspace_id: str,
+        benchmark_name: str
+    ) -> Dict[str, str]:
+        """
+        Deploy agent tree to runtime.
+
+        Creates actual agents in the runtime based on tree definition.
+
+        Args:
+            tree: Agent tree to deploy
+            workspace_id: Workspace ID
+            benchmark_name: Benchmark name
+
+        Returns:
+            Dict mapping agent names to agent IDs
+        """
+        if not self.runtime:
+            raise ValueError("Runtime not configured. Pass runtime to constructor.")
+
+        name_to_id = {}
+
+        # Create workers
+        for worker_def in tree.workers:
+            agent_id = await self._create_agent_from_definition(
+                worker_def, workspace_id, benchmark_name
+            )
+            name_to_id[worker_def.name] = agent_id
+
+        # Create managers
+        for manager_def in tree.managers:
+            agent_id = await self._create_agent_from_definition(
+                manager_def, workspace_id, benchmark_name
+            )
+            name_to_id[manager_def.name] = agent_id
+
+        # Create coordinator group with all agents
+        all_agent_ids = list(name_to_id.values())
+        await self.runtime.group_repo.create(
+            workspace_id, all_agent_ids, name="coordinator"
+        )
+
+        logger.info(f"Deployed tree with {len(name_to_id)} agents")
+
+        return name_to_id
+
+    async def _create_agent_from_definition(
+        self,
+        definition: AgentDefinition,
+        workspace_id: str,
+        benchmark_name: str
+    ) -> str:
+        """
+        Create an agent from AgentDefinition.
+
+        Args:
+            definition: Agent definition
+            workspace_id: Workspace ID
+            benchmark_name: Benchmark name
+
+        Returns:
+            Agent ID
+        """
+        import uuid
+        import json
+
+        agent_id = str(uuid.uuid4())
+
+        # Build initial history with system prompt
+        domain = definition.domain or "general"
+        prompt_builder = CacheOptimizedPromptBuilder(domain)
+
+        system_prompt = prompt_builder.build_prompt(
+            role=definition.role,
+            task_context={"benchmark": benchmark_name},
+            include_examples=False
+        )
+
+        # Add agent coordination instructions
+        coordination_prompt = """
+
+You are in a multi-agent system. Use these tools to communicate:
+- list_agents(): See all agents
+- create(role, guidance): Create sub-agents
+- send(to, content): Send direct messages
+- send_group_message(groupId, content): Send to groups
+- list_groups(): List your groups
+"""
+
+        initial_history = [
+            {
+                "role": "system",
+                "content": f"""你是一个多 Agent 系统中的 Agent。
+
+agent_id: {agent_id}
+workspace_id: {workspace_id}
+role: {definition.role}
+domain: {domain}
+
+{system_prompt}{coordination_prompt}
+"""
+            }
+        ]
+
+        # Add custom prompt if provided
+        if definition.prompt:
+            initial_history.append({
+                "role": "system",
+                "content": definition.prompt
+            })
+
+        # Create agent in database
+        await self.runtime.agent_repo.create(
+            id=agent_id,
+            workspace_id=workspace_id,
+            role=definition.role,
+            domain=definition.domain,
+            tools_json=json.dumps(definition.tools),
+            llm_history=json.dumps(initial_history),
+            metadata=json.dumps(definition.metadata)
+        )
+
+        logger.debug(f"Created agent: {agent_id} ({definition.name})")
+
+        return agent_id
 
     def _create_workers(
         self,

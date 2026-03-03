@@ -1,47 +1,20 @@
 #!/bin/bash
-# Test script wrapper that activates conda environment
+# Test script for ALFWorld with LLM agent
 
-# Conda environment name
-CONDA_ENV="skilltree_py311"
-
-# Project directory
-PROJECT_DIR="/Users/dp/Agent_research/design/auto_expansion_agent"
-TEST_SCRIPT="$PROJECT_DIR/scripts/test_alfworld_real.py"
-
-# Number of episodes (can be overridden with argument)
-NUM_EPISODES=${1:-3}
-
-echo "========================================="
-echo "  ALFWorld Test Runner"
-echo "========================================="
-echo ""
-echo "Conda environment: $CONDA_ENV"
-echo "Episodes: $NUM_EPISODES"
-echo ""
-
-# Check if conda is available
-if ! command -v conda &> /dev/null; then
-    echo "❌ Error: conda command not found"
-    echo "Please make sure conda is installed and in your PATH"
+# Check if API key is set
+if [ -z "$OPENAI_API_KEY" ]; then
+    echo "❌ OPENAI_API_KEY not set!"
+    echo ""
+    echo "Please set your API key:"
+    echo "  export OPENAI_API_KEY='your_api_key_here'"
+    echo "  export OPENAI_BASE_URL='https://az.gptplus5.com/v1'"
+    echo ""
     exit 1
 fi
 
-# Activate conda environment and run test
-echo "Activating conda environment: $CONDA_ENV"
+echo "✅ API key found"
+echo "Base URL: ${OPENAI_BASE_URL:-https://api.openai.com/v1}"
 echo ""
 
-# Run with conda
-conda run -n $CONDA_ENV python $TEST_SCRIPT --num_episodes $NUM_EPISODES
-
-exit_code=$?
-
-echo ""
-echo "========================================="
-if [ $exit_code -eq 0 ]; then
-    echo "✅ Test completed successfully"
-else
-    echo "❌ Test failed with exit code: $exit_code"
-fi
-echo "========================================="
-
-exit $exit_code
+# Run test
+/opt/anaconda3/envs/skilltree_py311/bin/python /Users/dp/Agent_research/design/auto_expansion_agent/scripts/test_alfworld_real.py --num_episodes 3 --split train
