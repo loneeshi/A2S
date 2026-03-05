@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 
 class AgentDefinition(BaseModel):
     """Definition of an agent in the tree"""
+
     name: str
     role: str  # "worker" | "manager"
     domain: Optional[str] = None  # e.g., "navigation", "email"
@@ -36,6 +37,7 @@ class AgentTree(BaseModel):
     - workers: Leaf nodes that perform specific tasks
     - managers: Internal nodes that coordinate workers
     """
+
     workers: List[AgentDefinition] = []
     managers: List[AgentDefinition] = []
     metadata: Dict[str, Any] = {}
@@ -59,7 +61,7 @@ class AgentTreeGenerator:
     def __init__(
         self,
         description_reader: Optional[BenchmarkDescriptionReader] = None,
-        runtime: Optional['AgentRuntime'] = None  # type: ignore
+        runtime: Optional["AgentRuntime"] = None,  # type: ignore
     ):
         """
         Initialize the tree generator
@@ -104,7 +106,7 @@ class AgentTreeGenerator:
                 "domain": intro.benchmark.get("domain"),
                 "version": intro.benchmark.get("version"),
                 "initialization_phase": "description_based",
-            }
+            },
         )
 
         logger.info(
@@ -117,7 +119,8 @@ class AgentTreeGenerator:
         self,
         tree: AgentTree,
         workspace_id: str,
-        benchmark_name: str
+        benchmark_name: str,
+        incremental: bool = False,
     ) -> Dict[str, str]:
         """
         Deploy agent tree to runtime.
@@ -137,8 +140,35 @@ class AgentTreeGenerator:
 
         name_to_id = {}
 
+        # In incremental mode, skip agents that already exist
+        existing_names: set = set()
+        if incremental:
+            try:
+                existing_agents = await self.runtime.agent_repo.list_by_workspace(
+                    workspace_id
+                )
+                for a in existing_agents:
+                    meta = a.get("metadata")
+                    if isinstance(meta, str):
+                        import json as _json
+
+                        try:
+                            meta = _json.loads(meta)
+                        except Exception:
+                            meta = {}
+                    if isinstance(meta, dict):
+                        existing_names.add(meta.get("agent_def_name", ""))
+                    existing_names.add(a.get("id", ""))
+            except Exception as e:
+                logger.warning(
+                    f"Failed to list existing agents for incremental deploy: {e}"
+                )
+
         # Create workers
         for worker_def in tree.workers:
+            if incremental and worker_def.name in existing_names:
+                logger.debug(f"Skipping existing worker: {worker_def.name}")
+                continue
             agent_id = await self._create_agent_from_definition(
                 worker_def, workspace_id, benchmark_name
             )
@@ -146,26 +176,29 @@ class AgentTreeGenerator:
 
         # Create managers
         for manager_def in tree.managers:
+            if incremental and manager_def.name in existing_names:
+                logger.debug(f"Skipping existing manager: {manager_def.name}")
+                continue
             agent_id = await self._create_agent_from_definition(
                 manager_def, workspace_id, benchmark_name
             )
             name_to_id[manager_def.name] = agent_id
 
-        # Create coordinator group with all agents
+        # Create or update coordinator group
         all_agent_ids = list(name_to_id.values())
-        await self.runtime.group_repo.create(
-            workspace_id, all_agent_ids, name="coordinator"
-        )
+        if all_agent_ids:
+            await self.runtime.group_repo.create(
+                workspace_id, all_agent_ids, name="coordinator"
+            )
 
-        logger.info(f"Deployed tree with {len(name_to_id)} agents")
+        new_count = len(name_to_id)
+        mode = "incremental" if incremental else "full"
+        logger.info(f"Deployed tree ({mode}): {new_count} new agents")
 
         return name_to_id
 
     async def _create_agent_from_definition(
-        self,
-        definition: AgentDefinition,
-        workspace_id: str,
-        benchmark_name: str
+        self, definition: AgentDefinition, workspace_id: str, benchmark_name: str
     ) -> str:
         """
         Create an agent from AgentDefinition.
@@ -183,14 +216,28 @@ class AgentTreeGenerator:
 
         agent_id = str(uuid.uuid4())
 
-        # Build initial history with system prompt
+        # Build initial history with system prompt (cache-aware + working context)
         domain = definition.domain or "general"
         prompt_builder = CacheOptimizedPromptBuilder(domain)
+
+        working_ctx = None
+        try:
+            from ..memory.manager import get_memory_manager
+
+            memory_mgr = get_memory_manager()
+            working_ctx = memory_mgr.get_working_context(
+                agent_name=definition.name,
+                domain=domain,
+                task_type=definition.role,
+            )
+        except Exception:
+            pass
 
         system_prompt = prompt_builder.build_prompt(
             role=definition.role,
             task_context={"benchmark": benchmark_name},
-            include_examples=False
+            include_examples=False,
+            working_context=working_ctx,
         )
 
         # Add agent coordination instructions
@@ -215,18 +262,16 @@ role: {definition.role}
 domain: {domain}
 
 {system_prompt}{coordination_prompt}
-"""
+""",
             }
         ]
 
         # Add custom prompt if provided
         if definition.prompt:
-            initial_history.append({
-                "role": "system",
-                "content": definition.prompt
-            })
+            initial_history.append({"role": "system", "content": definition.prompt})
 
-        # Create agent in database
+        # Create agent in database (include agent_def_name for incremental deploy tracking)
+        deploy_metadata = {**definition.metadata, "agent_def_name": definition.name}
         await self.runtime.agent_repo.create(
             id=agent_id,
             workspace_id=workspace_id,
@@ -234,7 +279,7 @@ domain: {domain}
             domain=definition.domain,
             tools_json=json.dumps(definition.tools),
             llm_history=json.dumps(initial_history),
-            metadata=json.dumps(definition.metadata)
+            metadata=json.dumps(deploy_metadata),
         )
 
         logger.debug(f"Created agent: {agent_id} ({definition.name})")
@@ -242,9 +287,7 @@ domain: {domain}
         return agent_id
 
     def _create_workers(
-        self,
-        skill_categories: Dict[str, List[str]],
-        intro: BenchmarkIntro
+        self, skill_categories: Dict[str, List[str]], intro: BenchmarkIntro
     ) -> List[AgentDefinition]:
         """
         Create worker agents for each skill category
@@ -270,7 +313,7 @@ domain: {domain}
                 prompt = prompt_builder.build_prompt(
                     role="worker",
                     task_context={"category": category},
-                    include_examples=False  # No dynamic examples initially
+                    include_examples=False,  # No dynamic examples initially
                 )
 
                 # Create worker agent
@@ -284,7 +327,7 @@ domain: {domain}
                         "category": category,
                         "num_tools": len(tools),
                         "prompt_builder_domain": domain,
-                    }
+                    },
                 )
 
                 workers.append(worker)
@@ -302,7 +345,7 @@ domain: {domain}
                         "category": category,
                         "num_tools": len(tools),
                         "prompt_error": str(e),
-                    }
+                    },
                 )
                 workers.append(worker)
 
@@ -331,7 +374,7 @@ domain: {domain}
             metadata={
                 "type": "coordinator",
                 "responsibility": "Route tasks to appropriate workers",
-            }
+            },
         )
         managers.append(coordinator)
 
@@ -346,7 +389,7 @@ domain: {domain}
                 metadata={
                     "type": "monitor",
                     "responsibility": "Monitor performance and trigger expansions",
-                }
+                },
             )
             managers.append(monitor)
 
@@ -367,16 +410,18 @@ domain: {domain}
             "navigation": "navigation",
             "email": "email",
             "course": "course",
-            "calendar": "course",  # Reuse course domain for calendar
-            "reservation": "course",  # Reuse course domain
+            "calendar": "course",
+            "reservation": "course",
+            "manipulation": "manipulation",
+            "perception": "perception",
+            "reasoning": "reasoning",
+            "interaction": "interaction",
         }
 
         return category_to_domain.get(category.lower(), category.lower())
 
     def refine_tree_with_exploration(
-        self,
-        tree: AgentTree,
-        exploration_results: Dict[str, Any]
+        self, tree: AgentTree, exploration_results: Dict[str, Any]
     ) -> AgentTree:
         """
         Refine agent tree based on environment exploration results

@@ -36,10 +36,7 @@ class AgentRuntime:
     """
 
     def __init__(
-        self,
-        workspace_id: str,
-        db_path: str,
-        llm_client: Optional[LLMClient] = None
+        self, workspace_id: str, db_path: str, llm_client: Optional[LLMClient] = None
     ):
         """
         Initialize runtime.
@@ -51,7 +48,7 @@ class AgentRuntime:
         """
         self.workspace_id = workspace_id
         self.db_path = db_path
-        self.runners: Dict[str, 'AgentRunner'] = {}
+        self.runners: Dict[str, "AgentRunner"] = {}
         self.event_bus = AgentEventBus()
         self.llm_client = llm_client or LLMClient()
 
@@ -72,12 +69,12 @@ class AgentRuntime:
         # Load all non-human agents
         agents = await self.agent_repo.list_by_workspace(self.workspace_id)
         for agent in agents:
-            if agent['role'] != 'human':
-                self.ensure_runner(agent['id'])
+            if agent["role"] != "human":
+                self.ensure_runner(agent["id"])
 
         logger.info(f"Bootstrapped runtime with {len(self.runners)} agents")
 
-    def ensure_runner(self, agent_id: str) -> 'AgentRunner':
+    def ensure_runner(self, agent_id: str) -> "AgentRunner":
         """
         Get or create AgentRunner for agent.
 
@@ -98,7 +95,7 @@ class AgentRuntime:
             workspace_id=self.workspace_id,
             runtime=self,
             event_bus=self.event_bus,
-            llm_client=self.llm_client
+            llm_client=self.llm_client,
         )
         self.runners[agent_id] = runner
         asyncio.create_task(runner.start())
@@ -107,7 +104,7 @@ class AgentRuntime:
     async def wake_agent(
         self,
         agent_id: str,
-        reason: Literal["direct_message", "group_message", "manual"] = "manual"
+        reason: Literal["direct_message", "group_message", "manual"] = "manual",
     ):
         """
         Wake up an agent to process messages.
@@ -120,7 +117,7 @@ class AgentRuntime:
 
         # Check if agent exists and is not human
         agent = await self.agent_repo.get(agent_id)
-        if not agent or agent['role'] == 'human':
+        if not agent or agent["role"] == "human":
             return
 
         runner = self.ensure_runner(agent_id)
@@ -142,7 +139,7 @@ class AgentRuntime:
                 continue
 
             agent = await self.agent_repo.get(member_id)
-            if agent and agent['role'] != 'human':
+            if agent and agent["role"] != "human":
                 await self.wake_agent(member_id, "group_message")
 
     async def interrupt_all(self):
@@ -164,9 +161,7 @@ class AgentRuntime:
 
         while True:
             # Check if any runner is active
-            any_active = any(
-                runner.running for runner in self.runners.values()
-            )
+            any_active = any(runner.running for runner in self.runners.values())
 
             if not any_active:
                 return True
@@ -184,7 +179,7 @@ class AgentRuntime:
         role: str,
         parent_id: str,
         guidance: Optional[str] = None,
-        domain: Optional[str] = None
+        domain: Optional[str] = None,
     ) -> str:
         """
         Create a sub-agent.
@@ -201,14 +196,28 @@ class AgentRuntime:
         """
         agent_id = str(uuid.uuid4())
 
-        # Build initial history with system prompt
+        # Build initial history with system prompt (cache-aware + working context)
         from ..prompts.prompt_builder import CacheOptimizedPromptBuilder
+        from ..memory.manager import get_memory_manager
 
         prompt_builder = CacheOptimizedPromptBuilder(domain or "general")
+
+        working_ctx = None
+        try:
+            memory_mgr = get_memory_manager()
+            working_ctx = memory_mgr.get_working_context(
+                agent_name=parent_id,
+                domain=domain or "general",
+                task_type=role,
+            )
+        except Exception:
+            pass
+
         system_prompt = prompt_builder.build_prompt(
             role=role,
             task_context={},
-            include_examples=False
+            include_examples=False,
+            working_context=working_ctx,
         )
 
         guidance_text = f"\n\nAdditional instructions:\n{guidance}" if guidance else ""
@@ -230,7 +239,7 @@ parent_id: {parent_id}
 - create(role, guidance): 创建子 Agent
 - send(to, content): 发送直接消息
 - send_group_message(groupId, content): 发送群组消息
-"""
+""",
             }
         ]
 
@@ -243,7 +252,7 @@ parent_id: {parent_id}
             domain=domain,
             llm_history=json.dumps(initial_history),
             tools_json=json.dumps([]),
-            metadata=json.dumps({"created_by": parent_id})
+            metadata=json.dumps({"created_by": parent_id}),
         )
 
         logger.info(f"Created sub-agent: {agent_id} (role={role}, parent={parent_id})")
@@ -255,7 +264,7 @@ parent_id: {parent_id}
         sender_id: str,
         target_id: str,
         content: str,
-        group_id: Optional[str] = None
+        group_id: Optional[str] = None,
     ) -> str:
         """
         Send a message from one agent to another.
@@ -283,7 +292,7 @@ parent_id: {parent_id}
             group_id=group_id,
             sender_id=sender_id,
             content_type=MessageType.TEXT,
-            content=content
+            content=content,
         )
 
         # Wake target agent
@@ -294,10 +303,7 @@ parent_id: {parent_id}
         return message_id
 
     async def create_and_send(
-        self,
-        sender_id: str,
-        target_id: str,
-        message: str
+        self, sender_id: str, target_id: str, message: str
     ) -> str:
         """
         Create a P2P group and send a message.
@@ -313,3 +319,15 @@ parent_id: {parent_id}
             Message ID
         """
         return await self.send_message(sender_id, target_id, message)
+
+    @property
+    def extension_registry(self):
+        """
+        Get the extension registry for registering hooks and submitting proposals.
+
+        Returns:
+            ExtensionRegistry singleton
+        """
+        from ..optimizer.extension_hooks import get_extension_registry
+
+        return get_extension_registry()

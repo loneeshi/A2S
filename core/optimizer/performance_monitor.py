@@ -12,6 +12,7 @@ from enum import Enum
 import logging
 
 from ..generator.tree_builder import AgentTree
+from core.reflection import get_reflection_agent
 
 
 logger = logging.getLogger(__name__)
@@ -19,6 +20,7 @@ logger = logging.getLogger(__name__)
 
 class TaskStatus(Enum):
     """Status of a task execution"""
+
     SUCCESS = "success"
     FAILURE = "failure"
     PARTIAL = "partial"
@@ -28,6 +30,7 @@ class TaskStatus(Enum):
 @dataclass
 class TaskResult:
     """Result of a single task execution"""
+
     task_id: str
     task_type: str
     status: TaskStatus
@@ -54,6 +57,7 @@ class TaskResult:
 @dataclass
 class AgentMetrics:
     """Metrics for a single agent"""
+
     agent_name: str
     total_tasks: int = 0
     successful_tasks: int = 0
@@ -151,15 +155,42 @@ class PerformanceMonitor:
             f"{result.status.value} by {result.agent_used}"
         )
 
+        # Check if inline reflection should be triggered
+        if result.status != TaskStatus.SUCCESS:
+            try:
+                recent_failures = [
+                    t for t in self.task_history[-10:] if t.status != TaskStatus.SUCCESS
+                ]
+                recent_rate = self.get_recent_performance(n=5).get("success_rate", 1.0)
+
+                if len(recent_failures) >= 3 or recent_rate < 0.3:
+                    reflection_agent = get_reflection_agent()
+                    failure_info = {
+                        "domain": result.task_type,
+                        "task_type": result.task_type,
+                        "agent_name": result.agent_used,
+                        "episode_id": result.task_id,
+                        "error_message": result.error_message or "Task failed",
+                        "action_history": result.metadata.get("action_history", []),
+                        "observation": result.metadata.get("observation", ""),
+                        "tools_used": result.metadata.get("tools_used", []),
+                        "success_rate": self.get_overall_success_rate(),
+                    }
+                    reflection = reflection_agent.analyze_failure(failure_info)
+                    logger.info(
+                        f"Inline reflection: {reflection.failure_type} "
+                        f"(confidence={reflection.confidence:.2f}, "
+                        f"action={reflection.prompt_update_action.value})"
+                    )
+            except Exception as e:
+                logger.debug(f"Inline reflection skipped: {e}")
+
     def get_overall_success_rate(self) -> float:
         """Get overall success rate across all tasks"""
         if not self.task_history:
             return 0.0
 
-        successful = sum(
-            1 for t in self.task_history
-            if t.status == TaskStatus.SUCCESS
-        )
+        successful = sum(1 for t in self.task_history if t.status == TaskStatus.SUCCESS)
         return successful / len(self.task_history)
 
     def get_agent_performance(self, agent_name: str) -> Optional[AgentMetrics]:
@@ -177,7 +208,8 @@ class PerformanceMonitor:
             List of agent names with success rate below threshold
         """
         return [
-            name for name, metrics in self.agent_metrics.items()
+            name
+            for name, metrics in self.agent_metrics.items()
             if metrics.success_rate < threshold
         ]
 
@@ -192,7 +224,8 @@ class PerformanceMonitor:
             List of task types with success rate below threshold
         """
         return [
-            task_type for task_type, metrics in self.task_type_metrics.items()
+            task_type
+            for task_type, metrics in self.task_type_metrics.items()
             if metrics["success_rate"] < threshold
         ]
 
@@ -206,7 +239,9 @@ class PerformanceMonitor:
         Returns:
             Dict with performance metrics
         """
-        recent = self.task_history[-n:] if len(self.task_history) >= n else self.task_history
+        recent = (
+            self.task_history[-n:] if len(self.task_history) >= n else self.task_history
+        )
 
         if not recent:
             return {"count": 0, "success_rate": 0.0}

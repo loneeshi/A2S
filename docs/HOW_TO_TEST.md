@@ -1,75 +1,116 @@
-# ALFWorld Testing Instructions
+# ALFWorld Benchmark — Setup & Testing
 
-由于conda环境在当前shell中无法直接访问，请按以下步骤手动测试：
+## Prerequisites
 
-## 方法1：直接在conda环境中运行（推荐）
+1. **Python 3.11** with the `skilltree_py311` conda environment (or equivalent)
+2. **ALFWorld dataset** downloaded and extracted
+3. **API key** for LLM calls (OpenAI-compatible endpoint)
 
-```bash
-# 1. 激活conda环境
-conda activate skilltree_py311
+## Environment Setup
 
-# 2. 进入项目目录
-cd /Users/dp/Agent_research/design/auto_expansion_agent
+### 1. Install ALFWorld
 
-# 3. 运行测试（3个episodes）
-python scripts/test_alfworld_real.py --num_episodes 3
-
-# 或者运行更多episodes
-python scripts/test_alfworld_real.py --num_episodes 10
-```
-
-## 方法2：使用完整Python路径
-
-如果你知道conda环境中的Python完整路径，可以创建一个快捷脚本：
-
-```bash
-# 首先找到Python路径（在激活的conda环境中运行）
-which python
-# 输出类似：/Users/dp/xxx/anaconda3/envs/skilltree_py311/bin/python
-
-# 然后直接使用该路径运行测试
-/Users/dp/xxx/anaconda3/envs/skilltree_py311/bin/python scripts/test_alfworld_real.py --num_episodes 3
-```
-
-## 方法3：提供Python路径给我们
-
-如果你能提供skilltree_py311环境中Python的完整路径，我们可以创建一个自动运行的脚本。
-
-请运行：
 ```bash
 conda activate skilltree_py311
-which python
+pip install alfworld
 ```
 
-然后把Python路径告诉我们，我会更新测试脚本。
+### 2. Download ALFWorld Data
 
-## 当前状态
-
-✅ 已完成：
-- ALFWorld benchmark配置
-- 测试脚本（使用get_environment API）
-- Agent tree生成
-- 性能监控和动态扩展
-
-⏳ 待测试：
-- 真实ALFWorld环境中的实际运行
-- 性能指标收集
-- 动态扩展验证
-
-## 如果测试成功
-
-测试成功后，你将看到：
-
-1. **Phase 1**: ALFWorld环境初始化
-2. **Phase 2**: 生成Agent Tree（5个workers + 2个managers）
-3. **Phase 3**: 性能监控器初始化
-4. **Phase 4**: 运行真实episodes
-5. **Phase 5**: 性能分析
-6. **Phase 6**: 动态扩展（如果需要）
-
-输出示例：
+```bash
+export ALFWORLD_DATA="$HOME/.cache/alfworld"
+alfworld-download
 ```
-✅ Completed 3 real episodes
-Success rate: 2/3 (66.7%)
-Overall success rate: 66.67%
+
+Or manually set `ALFWORLD_DATA` to point to an existing dataset directory containing `json_2.1.1/` and `logic/`.
+
+### 3. Configure API Key
+
+```bash
+# Option A: export directly
+export OPENAI_API_KEY="sk-..."
+export OPENAI_BASE_URL="https://api.openai.com/v1"
+
+# Option B: add to .env file in project root
+echo 'OPENAI_API_KEY=sk-...' >> .env
+echo 'OPENAI_BASE_URL=https://api.openai.com/v1' >> .env
+```
+
+## Smoke Run (Quick Validation)
+
+The fastest way to validate the full pipeline — 2 episodes, max 15 steps:
+
+```bash
+bash scripts/smoke_run.sh
+```
+
+For simulated mode (no real ALFWorld env needed):
+
+```bash
+bash scripts/smoke_run.sh --simulated
+```
+
+## Full Benchmark Run
+
+```bash
+python scripts/run_benchmark.py \
+    --benchmark alfworld \
+    --task_id test-001 \
+    --workspace_id local-ws \
+    --agent_id agent-001 \
+    --num_episodes 5 \
+    --max_steps 30
+```
+
+### CLI Options
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--benchmark` | *required* | Benchmark name (`alfworld`, `stulife`, `webshop`) |
+| `--task_id` | *required* | Unique task identifier |
+| `--workspace_id` | *required* | Swarm-IDE workspace ID |
+| `--agent_id` | *required* | Root agent ID |
+| `--num_episodes` | `5` | Number of episodes to run |
+| `--max_steps` | `30` | Max steps per episode |
+| `--model` | `gemini-2.5-flash` | LLM model override |
+
+## Integrated Test Script (standalone)
+
+For standalone testing without the Swarm-IDE event protocol:
+
+```bash
+python scripts/test_alfworld_integrated.py --num_episodes 3 --split train
+```
+
+## Results
+
+Results are persisted to `results/<benchmark_name>/` as:
+- `<run_id>.json` — Full run data
+- `<run_id>.csv` — Episode-level CSV
+- `<run_id>_summary.txt` — Human-readable summary
+
+## Troubleshooting
+
+| Problem | Fix |
+|---------|-----|
+| `ImportError: alfworld` | `pip install alfworld` in your conda env |
+| `FileNotFoundError: ALFWorld config paths missing` | Set `ALFWORLD_DATA` env var to the dataset root |
+| `OPENAI_API_KEY not found` | Export or add to `.env` |
+| `Connection timeout` on LLM calls | Check `OPENAI_BASE_URL`, increase timeout |
+| Slow resets (>5s) | Ensure `controller.load_receps: True` in `alfworld_config.yaml` |
+| `alfworld_config.yaml` not found | The file is at `benchmarks/alfworld/alfworld_config.yaml` — verify `$ALFWORLD_DATA` paths inside it |
+
+## Architecture
+
+```
+run_benchmark.py
+  ├── Phase 0: check_environment() — fail-fast validation
+  ├── Phase 1: AgentTreeGenerator → build agent tree from benchmark_intro.yaml
+  ├── Phase 2: Run episodes (AlfworldAdapter + ALFWorldAgent)
+  │     ├── adapter.reset() → get task
+  │     ├── agent.select_action() → LLM picks from admissible commands
+  │     ├── adapter.step(action) → execute in environment
+  │     └── ResultsRecorder.record_episode() → persist per-episode data
+  ├── Phase 3: DynamicExtensionEngine → extend tree if performance is low
+  └── Phase 4: ResultsRecorder.finalize_run() → save JSON/CSV/summary
 ```

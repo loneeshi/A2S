@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 # Try to load .env file
 try:
     from dotenv import load_dotenv
+
     # Load .env from project root
     project_root = Path(__file__).parent.parent.parent
     env_file = project_root / ".env"
@@ -32,6 +33,7 @@ except ImportError:
 @dataclass
 class LLMResponse:
     """Response from LLM API"""
+
     content: str
     model: str
     usage: Optional[Dict[str, int]] = None
@@ -55,7 +57,7 @@ class LLMClient:
         self,
         api_key: Optional[str] = None,
         base_url: Optional[str] = None,
-        default_model: Optional[str] = None
+        default_model: Optional[str] = None,
     ):
         """
         Initialize LLM client
@@ -72,11 +74,15 @@ class LLMClient:
                 "or pass api_key parameter."
             )
 
-        self.base_url = base_url or os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
+        self.base_url = base_url or os.getenv(
+            "OPENAI_BASE_URL", "https://api.openai.com/v1"
+        )
         self.default_model = default_model or os.getenv("LLM_MODEL", "gpt-3.5-turbo")
 
         # Remove trailing slash from base_url
         self.base_url = self.base_url.rstrip("/")
+
+        self._last_response: Optional[LLMResponse] = None
 
         logger.info(f"Initialized LLM client with model: {self.default_model}")
         logger.debug(f"Base URL: {self.base_url}")
@@ -87,7 +93,7 @@ class LLMClient:
         model: Optional[str] = None,
         temperature: float = 0.7,
         max_tokens: Optional[int] = None,
-        **kwargs
+        **kwargs,
     ) -> LLMResponse:
         """
         Generate completion for a single prompt
@@ -104,16 +110,14 @@ class LLMClient:
         """
         model = model or self.default_model
 
-        messages = [
-            {"role": "user", "content": prompt}
-        ]
+        messages = [{"role": "user", "content": prompt}]
 
         return self.chat(
             messages=messages,
             model=model,
             temperature=temperature,
             max_tokens=max_tokens,
-            **kwargs
+            **kwargs,
         )
 
     def chat(
@@ -123,7 +127,7 @@ class LLMClient:
         temperature: float = 0.7,
         max_tokens: Optional[int] = None,
         tools: Optional[List[Dict[str, Any]]] = None,
-        **kwargs
+        **kwargs,
     ) -> LLMResponse:
         """
         Generate chat completion
@@ -145,14 +149,14 @@ class LLMClient:
 
         headers = {
             "Content-Type": "application/json",
-            "Authorization": f"Bearer {self.api_key}"
+            "Authorization": f"Bearer {self.api_key}",
         }
 
         payload = {
             "model": model,
             "messages": messages,
             "temperature": temperature,
-            **kwargs
+            **kwargs,
         }
 
         if max_tokens is not None:
@@ -175,13 +179,14 @@ class LLMClient:
 
         try:
             import time
+
             start_time = time.time()
 
             response = requests.post(
                 url,
                 headers=headers,
                 json=payload,
-                timeout=120  # Increased timeout to 120 seconds
+                timeout=120,  # Increased timeout to 120 seconds
             )
             response.raise_for_status()
 
@@ -202,28 +207,34 @@ class LLMClient:
                 logger.info(f"   Tool calls: {len(tool_calls)}")
 
             if usage:
-                logger.info(f"   Tokens used: {usage.get('total_tokens', 'N/A')} "
-                           f"(prompt: {usage.get('prompt_tokens', 'N/A')}, "
-                           f"completion: {usage.get('completion_tokens', 'N/A')})")
+                logger.info(
+                    f"   Tokens used: {usage.get('total_tokens', 'N/A')} "
+                    f"(prompt: {usage.get('prompt_tokens', 'N/A')}, "
+                    f"completion: {usage.get('completion_tokens', 'N/A')})"
+                )
 
-            return LLMResponse(
+            resp = LLMResponse(
                 content=content,
                 model=model,
                 usage=usage,
                 raw_response=data,
-                tool_calls=tool_calls
+                tool_calls=tool_calls,
             )
+            self._last_response = resp
+            return resp
 
         except requests.exceptions.RequestException as e:
             logger.error(f"❌ LLM API request failed!")
             logger.error(f"   Error type: {type(e).__name__}")
             logger.error(f"   Error message: {str(e)}")
 
-            if hasattr(e, 'response') and e.response is not None:
+            if hasattr(e, "response") and e.response is not None:
                 logger.error(f"   HTTP Status: {e.response.status_code}")
                 logger.error(f"   Response headers: {dict(e.response.headers)}")
-                logger.error(f"   Response body: {e.response.text[:500]}")  # First 500 chars
-            elif hasattr(e, 'request') and e.request is not None:
+                logger.error(
+                    f"   Response body: {e.response.text[:500]}"
+                )  # First 500 chars
+            elif hasattr(e, "request") and e.request is not None:
                 logger.error(f"   Request URL: {e.request.url}")
                 logger.error(f"   Request method: {e.request.method}")
                 logger.error(f" Request headers: {dict(e.request.headers)}")
@@ -238,7 +249,7 @@ class LLMClient:
         model: Optional[str] = None,
         temperature: float = 0.7,
         max_tokens: Optional[int] = None,
-        **kwargs
+        **kwargs,
     ) -> List[LLMResponse]:
         """
         Generate completions for multiple prompts
@@ -255,13 +266,13 @@ class LLMClient:
         """
         responses = []
         for i, prompt in enumerate(prompts):
-            logger.debug(f"Processing prompt {i+1}/{len(prompts)}")
+            logger.debug(f"Processing prompt {i + 1}/{len(prompts)}")
             response = self.complete(
                 prompt=prompt,
                 model=model,
                 temperature=temperature,
                 max_tokens=max_tokens,
-                **kwargs
+                **kwargs,
             )
             responses.append(response)
 
@@ -276,9 +287,7 @@ class ALFWorldAgent:
     """
 
     def __init__(
-        self,
-        llm_client: Optional[LLMClient] = None,
-        model: Optional[str] = None
+        self, llm_client: Optional[LLMClient] = None, model: Optional[str] = None
     ):
         """
         Initialize ALFWorld agent
@@ -301,7 +310,7 @@ class ALFWorldAgent:
         observation: str,
         task_description: str,
         admissible_actions: List[str],
-        max_history_turns: int = 10
+        max_history_turns: int = 10,
     ) -> str:
         """
         Select an action based on current observation and available actions
@@ -326,7 +335,9 @@ class ALFWorldAgent:
 
         # Convert task_description to string if it's a tuple
         if isinstance(task_description, tuple):
-            task_description = task_description[0] if task_description else str(task_description)
+            task_description = (
+                task_description[0] if task_description else str(task_description)
+            )
         if not isinstance(task_description, str):
             task_description = str(task_description)
 
@@ -339,7 +350,9 @@ class ALFWorldAgent:
                 if isinstance(first_elem, str):
                     clean_actions.append(first_elem)
                 else:
-                    clean_actions.append(str(first_elem) if first_elem is not None else "look around")
+                    clean_actions.append(
+                        str(first_elem) if first_elem is not None else "look around"
+                    )
             elif isinstance(action, str):
                 clean_actions.append(action)
             else:
@@ -353,7 +366,7 @@ class ALFWorldAgent:
             observation=observation,
             task_description=task_description,
             admissible_actions=clean_actions,
-            history=self.conversation_history[-max_history_turns*2:]
+            history=self.conversation_history[-max_history_turns * 2 :],
         )
 
         try:
@@ -361,20 +374,21 @@ class ALFWorldAgent:
                 prompt=prompt,
                 model=self.model,
                 temperature=0.3,  # Lower temperature for more deterministic actions
-                max_tokens=500
+                max_tokens=500,
             )
 
             action = self._parse_action(response.content, clean_actions)
 
             # Update conversation history
-            self.conversation_history.append({
-                "role": "user",
-                "content": f"Observation: {observation}\nAvailable actions: {len(clean_actions)} commands"
-            })
-            self.conversation_history.append({
-                "role": "assistant",
-                "content": f"Action: {action}"
-            })
+            self.conversation_history.append(
+                {
+                    "role": "user",
+                    "content": f"Observation: {observation}\nAvailable actions: {len(clean_actions)} commands",
+                }
+            )
+            self.conversation_history.append(
+                {"role": "assistant", "content": f"Action: {action}"}
+            )
 
             return action
 
@@ -388,7 +402,7 @@ class ALFWorldAgent:
         observation: str,
         task_description: str,
         admissible_actions: List[str],
-        history: List[Dict[str, str]]
+        history: List[Dict[str, str]],
     ) -> str:
         """Build prompt for action selection"""
 
@@ -412,32 +426,30 @@ class ALFWorldAgent:
                 action_str = str(action)
             prompt_parts.append(f"{i}. {action_str}")
 
-        prompt_parts.extend([
-            "",
-            "Rules:",
-            "- Choose ONLY from the listed actions",
-            "- Respond with just the action text, no explanation",
-            "- Think step by step about what will help complete the task",
-            "- Be concise and direct",
-        ])
+        prompt_parts.extend(
+            [
+                "",
+                "Rules:",
+                "- Choose ONLY from the listed actions",
+                "- Respond with just the action text, no explanation",
+                "- Think step by step about what will help complete the task",
+                "- Be concise and direct",
+            ]
+        )
 
         # Add recent history if available
         if history:
-            prompt_parts.extend([
-                "",
-                "Recent actions and observations:"
-            ])
+            prompt_parts.extend(["", "Recent actions and observations:"])
             for i in range(0, len(history), 2):
-                if i+1 < len(history):
+                if i + 1 < len(history):
                     user_msg = history[i]["content"]
-                    asst_msg = history[i+1]["content"]
+                    asst_msg = history[i + 1]["content"]
                     prompt_parts.append(f"- {user_msg}")
                     prompt_parts.append(f"  → {asst_msg}")
 
-        prompt_parts.extend([
-            "",
-            "What is your next action? (Respond with just the action text):"
-        ])
+        prompt_parts.extend(
+            ["", "What is your next action? (Respond with just the action text):"]
+        )
 
         return "\n".join(prompt_parts)
 

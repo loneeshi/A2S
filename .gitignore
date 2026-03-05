@@ -104,3 +104,6 @@ typeguard/
 
 # 保留版本更新文档
 !version_docs/**/*.md
+
+# 需要学习的项目
+swarm-ide/

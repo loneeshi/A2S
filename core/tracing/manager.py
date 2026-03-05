@@ -14,10 +14,23 @@ import json
 from contextlib import asynccontextmanager
 
 from .schema import (
-    TaskTrace, AgentNodeState, TraceEvent, EventType,
-    NodeType, NodeStatus, create_trace_event, create_agent_node, create_task_trace,
-    LLMApiCallTrace, ToolCallRecord, HandoffVector,
-    PromptCachingInfo, CacheStatus, DynamicMemory, ReflectionTrace, BenchmarkContext
+    TaskTrace,
+    AgentNodeState,
+    TraceEvent,
+    EventType,
+    NodeType,
+    NodeStatus,
+    create_trace_event,
+    create_agent_node,
+    create_task_trace,
+    LLMApiCallTrace,
+    ToolCallRecord,
+    HandoffVector,
+    PromptCachingInfo,
+    CacheStatus,
+    DynamicMemory,
+    ReflectionTrace,
+    BenchmarkContext,
 )
 
 
@@ -34,7 +47,7 @@ class TracingManager:
         task_description: str,
         output_dir: Optional[str] = None,
         auto_save: bool = True,
-        save_interval: int = 10  # 每N个事件自动保存一次
+        save_interval: int = 10,  # 每N个事件自动保存一次
     ):
         self.task_trace = create_task_trace(task_name, task_description)
         self.output_dir = Path(output_dir) if output_dir else None
@@ -53,7 +66,7 @@ class TracingManager:
         user_messages: List[Dict[str, Any]],
         tools: List[Dict[str, Any]],
         parent_id: Optional[str] = None,
-        **kwargs
+        **kwargs,
     ) -> str:
         """创建新的 Agent 节点"""
         depth = 0
@@ -71,7 +84,7 @@ class TracingManager:
             tools=tools,
             parent_id=parent_id,
             depth=depth,
-            **kwargs
+            **kwargs,
         )
 
         # 更新父节点的 child_ids
@@ -87,11 +100,7 @@ class TracingManager:
             create_trace_event(
                 event_type=EventType.NODE_CREATED,
                 node_id=node.node_id,
-                content={
-                    "role": role,
-                    "depth": depth,
-                    "parent_id": parent_id
-                }
+                content={"role": role, "depth": depth, "parent_id": parent_id},
             )
         )
 
@@ -105,10 +114,7 @@ class TracingManager:
             node.started_at = datetime.utcnow()
 
             await self.record_event(
-                create_trace_event(
-                    event_type=EventType.NODE_STARTED,
-                    node_id=node_id
-                )
+                create_trace_event(event_type=EventType.NODE_STARTED, node_id=node_id)
             )
 
     async def complete_node(self, node_id: str, success: bool = True) -> None:
@@ -118,13 +124,17 @@ class TracingManager:
             node.status = NodeStatus.COMPLETED if success else NodeStatus.FAILED
             node.completed_at = datetime.utcnow()
             node.total_execution_time_ms = (
-                node.completed_at - node.started_at
-            ).total_seconds() * 1000 if node.started_at else 0.0
+                (node.completed_at - node.started_at).total_seconds() * 1000
+                if node.started_at
+                else 0.0
+            )
 
             await self.record_event(
                 create_trace_event(
-                    event_type=EventType.NODE_COMPLETED if success else EventType.NODE_FAILED,
-                    node_id=node_id
+                    event_type=EventType.NODE_COMPLETED
+                    if success
+                    else EventType.NODE_FAILED,
+                    node_id=node_id,
                 )
             )
 
@@ -153,7 +163,7 @@ class TracingManager:
         tools: Optional[List[Dict[str, Any]]] = None,
         tool_calls: Optional[List[Dict[str, Any]]] = None,
         cache_info: Optional[PromptCachingInfo] = None,
-        **kwargs
+        **kwargs,
     ) -> str:
         """记录 LLM 调用"""
         call_id = str(uuid.uuid4())
@@ -163,7 +173,7 @@ class TracingManager:
             create_trace_event(
                 event_type=EventType.LLM_CALL_START,
                 node_id=node_id,
-                content={"model": model, "call_id": call_id}
+                content={"model": model, "call_id": call_id},
             )
         )
 
@@ -181,7 +191,7 @@ class TracingManager:
             total_tokens=total_tokens,
             cache_info=cache_info,
             latency_ms=latency_ms,
-            **kwargs
+            **kwargs,
         )
 
         # 记录完成事件
@@ -193,9 +203,9 @@ class TracingManager:
                     "call_id": call_id,
                     "model": model,
                     "total_tokens": total_tokens,
-                    "latency_ms": latency_ms
+                    "latency_ms": latency_ms,
                 },
-                llm_call_trace=llm_trace
+                llm_call_trace=llm_trace,
             )
         )
 
@@ -215,7 +225,7 @@ class TracingManager:
         result: Optional[Dict[str, Any]] = None,
         error: Optional[str] = None,
         execution_time_ms: float = 0.0,
-        **kwargs
+        **kwargs,
     ) -> str:
         """记录工具调用"""
         call_id = str(uuid.uuid4())
@@ -231,7 +241,7 @@ class TracingManager:
             result=result,
             error_message=error,
             execution_time_ms=execution_time_ms,
-            **kwargs
+            **kwargs,
         )
 
         # 记录事件
@@ -240,11 +250,8 @@ class TracingManager:
             create_trace_event(
                 event_type=event_type,
                 node_id=node_id,
-                content={
-                    "tool_name": tool_name,
-                    "success": not error
-                },
-                tool_call_record=tool_record
+                content={"tool_name": tool_name, "success": not error},
+                tool_call_record=tool_record,
             )
         )
 
@@ -261,7 +268,7 @@ class TracingManager:
         to_agent_id: str,
         to_agent_role: str,
         message_content: str,
-        **kwargs
+        **kwargs,
     ) -> str:
         """记录任务移交"""
         handoff_id = str(uuid.uuid4())
@@ -273,7 +280,7 @@ class TracingManager:
             to_agent_role=to_agent_role,
             timestamp=datetime.utcnow(),
             message_content=message_content,
-            **kwargs
+            **kwargs,
         )
 
         # 记录移交开始事件
@@ -281,11 +288,8 @@ class TracingManager:
             create_trace_event(
                 event_type=EventType.HANDOFF_START,
                 node_id=from_agent_id,
-                content={
-                    "handoff_id": handoff_id,
-                    "to_agent_role": to_agent_role
-                },
-                handoff_vector=handoff
+                content={"handoff_id": handoff_id, "to_agent_role": to_agent_role},
+                handoff_vector=handoff,
             )
         )
 
@@ -300,12 +304,19 @@ class TracingManager:
         self,
         node_id: str,
         trigger_reason: str,
-        reflection_content: str,
-        suggested_improvements: List[str],
-        confidence_score: float,
-        **kwargs
+        reflection_content: str = "",
+        suggested_improvements: Optional[List[str]] = None,
+        confidence_score: float = 0.0,
+        failure_type: str = "",
+        root_cause: str = "",
+        tools_involved: Optional[List[str]] = None,
+        error_pattern: str = "",
+        prompt_update_action: str = "no_update",
+        prompt_update_content: str = "",
+        retry_recommendation: bool = False,
+        **kwargs,
     ) -> str:
-        """记录反思过程"""
+        """记录反思过程 (structured fields aligned with ReflectionOutput)"""
         reflection_id = str(uuid.uuid4())
 
         reflection = ReflectionTrace(
@@ -313,9 +324,16 @@ class TracingManager:
             timestamp=datetime.utcnow(),
             trigger_reason=trigger_reason,
             reflection_content=reflection_content,
-            suggested_improvements=suggested_improvements,
-            confidence_score=confidence_score,
-            **kwargs
+            suggested_improvements=suggested_improvements or [],
+            confidence=confidence_score,
+            failure_type=failure_type,
+            root_cause=root_cause,
+            tools_involved=tools_involved or [],
+            error_pattern=error_pattern,
+            prompt_update_action=prompt_update_action,
+            prompt_update_content=prompt_update_content,
+            retry_recommendation=retry_recommendation,
+            **kwargs,
         )
 
         await self.record_event(
@@ -324,9 +342,11 @@ class TracingManager:
                 node_id=node_id,
                 content={
                     "reflection_id": reflection_id,
-                    "trigger_reason": trigger_reason
+                    "trigger_reason": trigger_reason,
+                    "failure_type": failure_type,
+                    "error_pattern": error_pattern,
                 },
-                reflection_trace=reflection
+                reflection_trace=reflection,
             )
         )
 
@@ -339,7 +359,7 @@ class TracingManager:
         available_commands: Optional[List[str]] = None,
         observation: Optional[str] = None,
         background: Optional[str] = None,
-        **kwargs
+        **kwargs,
     ) -> None:
         """记录 Benchmark 上下文"""
         benchmark_context = BenchmarkContext(
@@ -347,7 +367,7 @@ class TracingManager:
             available_commands=available_commands,
             observation=observation,
             background=background,
-            **kwargs
+            **kwargs,
         )
 
         # 更新节点的 benchmark 上下文
@@ -361,19 +381,24 @@ class TracingManager:
         short_term: List[str],
         long_term: List[Dict[str, Any]],
         working: Dict[str, Any],
-        **kwargs
+        recent_actions: Optional[List[str]] = None,
+        lessons_learned: Optional[List[str]] = None,
+        known_errors: Optional[List[Dict[str, Any]]] = None,
+        **kwargs,
     ) -> None:
-        """记录动态记忆快照"""
+        """记录动态记忆快照 (structured fields aligned with MemoryManager)"""
         memory = DynamicMemory(
             snapshot_id=str(uuid.uuid4()),
             timestamp=datetime.utcnow(),
             short_term_memory=short_term,
             long_term_memory=long_term,
             working_memory=working,
-            **kwargs
+            recent_actions=recent_actions or [],
+            lessons_learned=lessons_learned or [],
+            known_errors=known_errors or [],
+            **kwargs,
         )
 
-        # 更新节点的动态记忆
         node = self.task_trace.get_node(node_id)
         if node:
             node.dynamic_memory = memory
@@ -404,7 +429,7 @@ class TracingManager:
             "total_tool_calls": self.task_trace.total_tool_calls,
             "total_tokens_used": self.task_trace.total_tokens_used,
             "total_cost_usd": self.task_trace.total_cost_usd,
-            "success": self.task_trace.success
+            "success": self.task_trace.success,
         }
 
     # ===== Save & Export =====
@@ -422,15 +447,17 @@ class TracingManager:
 
         # 保存执行树（用于前端）
         tree_path = self.output_dir / f"trace_{self.task_trace.trace_id}_tree.json"
-        with open(tree_path, 'w', encoding='utf-8') as f:
+        with open(tree_path, "w", encoding="utf-8") as f:
             json.dump(self.get_execution_tree(), f, indent=2, ensure_ascii=False)
 
         # 保存统计摘要
         stats_path = self.output_dir / f"trace_{self.task_trace.trace_id}_stats.json"
-        with open(stats_path, 'w', encoding='utf-8') as f:
+        with open(stats_path, "w", encoding="utf-8") as f:
             json.dump(self.get_statistics(), f, indent=2, ensure_ascii=False)
 
-    async def finalize(self, success: bool = True, final_result: Optional[Dict[str, Any]] = None) -> None:
+    async def finalize(
+        self, success: bool = True, final_result: Optional[Dict[str, Any]] = None
+    ) -> None:
         """完成追踪"""
         self.task_trace.success = success
         self.task_trace.final_result = final_result
@@ -447,7 +474,7 @@ class TracingManager:
         system_prompt: str,
         user_messages: List[Dict[str, Any]],
         tools: List[Dict[str, Any]],
-        parent_id: Optional[str] = None
+        parent_id: Optional[str] = None,
     ):
         """上下文管理器：自动追踪节点的创建和完成"""
         node_id = await self.create_node(
@@ -456,7 +483,7 @@ class TracingManager:
             system_prompt=system_prompt,
             user_messages=user_messages,
             tools=tools,
-            parent_id=parent_id
+            parent_id=parent_id,
         )
 
         await self.start_node(node_id)

@@ -18,6 +18,12 @@ from .extension_engine import (
     ExtensionProposal,
 )
 
+from .extension_hooks import (
+    ExtensionHook,
+    ExtensionRegistry,
+    get_extension_registry,
+)
+
 __all__ = [
     "PerformanceMonitor",
     "TaskStatus",
@@ -26,4 +32,7 @@ __all__ = [
     "DynamicExtensionEngine",
     "ExtensionType",
     "ExtensionProposal",
+    "ExtensionHook",
+    "ExtensionRegistry",
+    "get_extension_registry",
 ]
