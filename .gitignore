@@ -20,11 +20,11 @@ wheels/
 .installed.cfg
 *.egg
 
-# Virtual environments
+# Virtual Environment
 venv/
 ENV/
 env/
-.venv/
+.venv
 
 # IDE
 .vscode/
@@ -36,6 +36,62 @@ env/
 # OS
 .DS_Store
 Thumbs.db
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+logs/
+*.log.*
+
+# Data and state files
+*.json.bak
+agent_memory.json
+runs.json
+current_session.json
+checkpoint_state/
+callback_state/
+coredumpy/
+
+# Model artifacts
+*.pkl
+*.h5
+*.pt
+*.pth
+*.bin
+
+# Test coverage
+.coverage
+htmlcov/
+.pytest_cache/
+.tox/
+
+# Documentation
+docs/_build/
+docs/.doctrees/
+
+# Node modules (if any)
+node_modules/
+
+# Ralph
+.ralph/
+
+# Specific to this project
+design/A2S/Stulife/results/*/agent_memory.json
+design/A2S/Stulife/results/*/runs.json
+design/A2S/Stulife/results/*/current_session.json
+design/A2S/Stulife/results/*/checkpoint_state/
+design/A2S/Stulife/results/*/callback_state/
+design/A2S/Stulife/results/*/coredumpy/
+
+# Keep example configs but ignore real configs
+config.yaml
+!config.yaml.example
+*.env
+!*.env.example
 
 # 项目特定（关键：排除测试脚本和文档）
 test_*.py
@@ -51,6 +107,7 @@ test_*.sh
 # 文档文件（版本更新文件可以保留在一个独立文件夹）
 *.md
 !README.md
+!version_docs/**/*.md
 
 # API Keys（关键）
 .env
@@ -101,9 +158,6 @@ typeguard/
 !*.yaml
 !configs/**/*.yaml
 !benchmarks/**/*.yaml
-
-# 保留版本更新文档
-!version_docs/**/*.md
 
 # 需要学习的项目
 swarm-ide/
