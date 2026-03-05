@@ -26,6 +26,7 @@ import os
 import sys
 import time
 import uuid
+from datetime import datetime
 from pathlib import Path
 
 # Ensure the project root is on sys.path
@@ -319,7 +320,15 @@ class BenchmarkRunner:
                 logger.info("Resetting environment...")
                 reset_start = time.time()
                 task_desc = adapter.reset()
-                agent.reset()
+
+                # Fetch working context for this episode
+                working_ctx = self.memory_manager.get_working_context(
+                    agent_name=worker_id, domain="alfworld", task_type="alfworld"
+                )
+
+                # Reset agent with fresh context
+                agent.reset(working_context=working_ctx)
+
                 logger.info(f"Environment reset in {time.time() - reset_start:.2f}s")
                 self.bridge.log(worker_id, "content", f"Task: {task_desc[:200]}")
 
@@ -451,6 +460,31 @@ class BenchmarkRunner:
                         )
                     except Exception as refl_err:
                         logger.debug(f"Episode reflection skipped: {refl_err}")
+
+                # Store short-term memory of this episode result
+                try:
+                    from core.memory import MemoryEntry, MemoryType
+
+                    self.memory_manager.store(
+                        MemoryEntry(
+                            entry_id=f"mem-{episode_id}",
+                            memory_type=MemoryType.SHORT_TERM,
+                            domain="alfworld",
+                            task_type="alfworld",
+                            agent_name=worker_id,
+                            created_at=datetime.utcnow().isoformat(),
+                            content=f"Episode {ep + 1}: {'SUCCESS' if success else 'FAILURE'} "
+                            f"in {step_count} steps. Task: {task_desc[:100]}...",
+                            tags=[
+                                "success" if success else "failure",
+                                "episode_result",
+                            ],
+                            importance=0.8 if not success else 0.5,
+                        )
+                    )
+                    logger.info(f"Stored short-term memory for episode {ep + 1}")
+                except Exception as mem_err:
+                    logger.warning(f"Failed to store memory: {mem_err}")
 
                 status_emoji = "✅" if success else "❌"
                 self.bridge.log(

@@ -1,43 +1,44 @@
 """
-Semantic Cache Layer for Memory Retrieval.
+Semantic Cache Layer with Faiss HNSW Indexing.
 
-Inspired by vLLM semantic-router's caching architecture:
-- Embedding-based cosine similarity for cache hit detection
-- In-memory HNSW-like index for O(log n) approximate nearest neighbor lookup
-- Per-domain similarity thresholds for precision tuning
-- LRU eviction for bounded memory usage
-
-This layer sits ALONGSIDE the existing metadata-based SemanticRouter,
-boosting retrieval speed for repeated/similar queries without replacing
-the structured scoring system.
+Advanced Features:
+- Faiss HNSW Index: O(log n) approximate nearest neighbor search
+- Persistence: Saves/loads index and data to disk
+- Domain-Adaptive Thresholds: Custom similarity per domain
+- LRU Eviction: Keeps index size manageable
 """
 
+from __future__ import annotations
+
 import hashlib
+import json
 import logging
+import os
 import time
 from collections import OrderedDict
-from dataclasses import dataclass
-from typing import Dict, List, Optional
+from dataclasses import dataclass, asdict
+from typing import Dict, List, Optional, Any
 
 import numpy as np
+
+try:
+    import faiss
+except ImportError:
+    faiss = None
+
+try:
+    from sentence_transformers import SentenceTransformer
+except ImportError:
+    SentenceTransformer = None
 
 from .schema import MemoryEntry, MemoryQuery
 
 logger = logging.getLogger(__name__)
 
 
-# ---------------------------------------------------------------------------
-# Embedding backend
-# ---------------------------------------------------------------------------
-
-
 class EmbeddingBackend:
     """
     Generate embeddings for text.
-
-    Tries sentence-transformers (MiniLM, 384-dim) first; falls back to a
-    lightweight TF-IDF-like bag-of-words hasher that still supports cosine
-    similarity — less accurate but zero-dependency.
     """
 
     def __init__(self, model_name: str = "all-MiniLM-L6-v2", dim: int = 384):
@@ -45,42 +46,40 @@ class EmbeddingBackend:
         self._model = None
         self._use_transformer = False
 
-        try:
-            from sentence_transformers import SentenceTransformer
+        if SentenceTransformer:
+            try:
+                self._model = SentenceTransformer(model_name)
+                self._use_transformer = True
+                self.dim = self._model.get_sentence_embedding_dimension()
+                logger.info(
+                    "SemanticCache: using SentenceTransformer(%s), dim=%s",
+                    model_name,
+                    self.dim,
+                )
+            except Exception as e:
+                logger.warning("Failed to load SentenceTransformer: %s", e)
 
-            self._model = SentenceTransformer(model_name)
-            self._use_transformer = True
-            self.dim = self._model.get_sentence_embedding_dimension()
+        if not self._use_transformer:
             logger.info(
-                f"SemanticCache: using SentenceTransformer({model_name}), dim={self.dim}"
-            )
-        except ImportError:
-            logger.info(
-                "SemanticCache: sentence-transformers not installed, using hash-based fallback"
+                "SemanticCache: sentence-transformers not available; using hash fallback"
             )
 
     def encode(self, text: str) -> np.ndarray:
-        """Return a unit-length vector for *text*."""
-        if self._use_transformer:
+        """Return a unit-length embedding vector for text."""
+        if self._use_transformer and self._model:
             vec = self._model.encode(text, normalize_embeddings=True)
             return np.asarray(vec, dtype=np.float32)
         return self._hash_encode(text)
 
     def encode_batch(self, texts: List[str]) -> np.ndarray:
-        """Encode multiple texts at once."""
-        if self._use_transformer:
+        if self._use_transformer and self._model:
             vecs = self._model.encode(texts, normalize_embeddings=True)
             return np.asarray(vecs, dtype=np.float32)
-        return np.array([self._hash_encode(t) for t in texts], dtype=np.float32)
-
-    # ---- fallback ----------------------------------------------------------
+        return np.array([self._hash_encode(text) for text in texts], dtype=np.float32)
 
     def _hash_encode(self, text: str) -> np.ndarray:
         """
-        Deterministic hash-based sparse vector.
-
-        Words are hashed into *dim* buckets; the resulting vector is L2-normalised.
-        This preserves bag-of-words cosine similarity at near-zero cost.
+        Deterministic hash-based sparse vector with L2 normalization.
         """
         vec = np.zeros(self.dim, dtype=np.float32)
         tokens = text.lower().split()
@@ -93,125 +92,141 @@ class EmbeddingBackend:
         return vec
 
 
-# ---------------------------------------------------------------------------
-# Cache entry
-# ---------------------------------------------------------------------------
-
-
 @dataclass
 class CacheEntry:
-    """A single entry in the semantic cache."""
-
-    query_key: str  # Canonical key for deduplication
-    embedding: np.ndarray  # Unit-length embedding
-    results: List[MemoryEntry]  # Cached retrieval results
-    created_at: float  # time.time()
+    query_key: str
+    embedding: List[float]  # JSON serializable
+    results: List[Dict[str, Any]]  # Serialized MemoryEntry
+    created_at: float
     last_accessed: float
     hit_count: int = 0
-    ttl_seconds: float = 3600.0  # Default 1h
+    ttl_seconds: float = 3600.0
 
 
-# ---------------------------------------------------------------------------
-# Semantic Cache
-# ---------------------------------------------------------------------------
-
-# Per-domain similarity thresholds (inspired by semantic-router config)
+# Domain-Specific Thresholds (tuned for precision/recall balance)
 DEFAULT_THRESHOLDS: Dict[str, float] = {
-    "manipulation": 0.85,
-    "navigation": 0.82,
-    "perception": 0.80,
-    "reasoning": 0.88,
-    "interaction": 0.78,
+    "manipulation": 0.85,  # High precision needed for physical actions
+    "navigation": 0.82,  # Slightly relaxed for spatial queries
+    "perception": 0.80,  # Tolerant to visual descriptions variations
+    "reasoning": 0.88,  # Strict logic matching
+    "interaction": 0.78,  # Flexible conversation matching
     "general": 0.80,
 }
 
 
 class SemanticCache:
     """
-    In-memory semantic cache for memory retrieval results.
-
-    Design (from semantic-router):
-    1. Incoming query → embedding
-    2. Cosine-similarity scan against cached embeddings
-    3. If similarity >= threshold → cache HIT, return stored results
-    4. Else → cache MISS, run full retrieval, store result
-
-    The cache does NOT replace the metadata-based SemanticRouter.
-    It wraps around it: on a miss, the router runs as usual and results
-    are stored for future hits.
+    Persistent Semantic Cache with Faiss HNSW Index.
     """
 
     def __init__(
         self,
-        max_entries: int = 500,
+        persist_dir: str = "data/cache",
+        max_entries: int = 5000,
         default_threshold: float = 0.82,
-        default_ttl: float = 3600.0,
+        default_ttl: float = 86400.0,  # 24 hours default
         embedding_backend: Optional[EmbeddingBackend] = None,
     ):
+        self.persist_dir = persist_dir
         self.max_entries = max_entries
         self.default_threshold = default_threshold
         self.default_ttl = default_ttl
         self.embedder = embedding_backend or EmbeddingBackend()
 
-        # LRU ordered dict: key -> CacheEntry
-        self._cache: OrderedDict[str, CacheEntry] = OrderedDict()
+        self.index_path = os.path.join(persist_dir, "semantic_index.faiss")
+        self.data_path = os.path.join(persist_dir, "cache_data.json")
 
-        # Stats
+        # Ensure persist dir exists
+        os.makedirs(persist_dir, exist_ok=True)
+
+        self._cache: OrderedDict[str, CacheEntry] = OrderedDict()
         self.hits = 0
         self.misses = 0
 
-    # ------------------------------------------------------------------
-    # Public API
-    # ------------------------------------------------------------------
+        # Faiss Index Initialization
+        self.use_faiss = faiss is not None
+        self.index: Any = None
+        self.id_to_key: Dict[int, str] = {}
+        self.next_id = 0
+
+        if self.use_faiss and faiss:
+            self._init_faiss_index()
+        else:
+            logger.warning("Faiss not installed. Falling back to linear scan (slow).")
+
+        # Load persisted data
+        self._load()
+
+    def _init_faiss_index(self):
+        """Initialize Faiss HNSW index."""
+        if not faiss:
+            return
+        # HNSW params: M=16 neighbors, efConstruction=200 quality
+        self.index = faiss.IndexHNSWFlat(self.embedder.dim, 16)
+        self.index.hnsw.efConstruction = 200
+        self.index.hnsw.efSearch = 50  # Search quality
 
     def lookup(self, query: MemoryQuery) -> Optional[List[MemoryEntry]]:
-        """
-        Look up cached results for a query.
-
-        Returns cached results on hit, None on miss.
-        """
         query_text = self._query_to_text(query)
         query_emb = self.embedder.encode(query_text)
-
         threshold = self._get_threshold(query.domain)
-        best_score = -1.0
-        best_key: Optional[str] = None
 
-        for key, entry in self._cache.items():
-            # Skip expired
-            if time.time() - entry.created_at > entry.ttl_seconds:
-                continue
-            sim = float(np.dot(query_emb, entry.embedding))
-            if sim > best_score:
-                best_score = sim
-                best_key = key
+        # 1. Faiss Search (O(log n))
+        if self.use_faiss and self.index and self.index.ntotal > 0:
+            k = min(10, self.index.ntotal)  # Check top 10 candidates
+            # Reshape for Faiss (1, dim)
+            q_vec = query_emb.reshape(1, -1)
+            distances, indices = self.index.search(q_vec, k)
 
-        if best_score >= threshold and best_key is not None:
-            entry = self._cache[best_key]
-            entry.hit_count += 1
-            entry.last_accessed = time.time()
-            # Move to end (most recently used)
-            self._cache.move_to_end(best_key)
-            self.hits += 1
-            logger.debug(
-                f"SemanticCache HIT: score={best_score:.3f} threshold={threshold} "
-                f"domain={query.domain}"
-            )
-            return entry.results
+            # Check candidates
+            for dist, idx in zip(distances[0], indices[0]):
+                if idx == -1:
+                    continue
+                # Inner Product distance is cosine similarity for normalized vectors
+                similarity = dist
+
+                if similarity >= threshold:
+                    key = self.id_to_key.get(int(idx))
+                    if key and key in self._cache:
+                        entry = self._cache[key]
+                        # Check TTL
+                        if time.time() - entry.created_at <= entry.ttl_seconds:
+                            self._record_hit(key)
+                            return [MemoryEntry(**r) for r in entry.results]
+
+        # 2. Linear Fallback (if Faiss fails or not used)
+        if not self.use_faiss or not self.index:
+            best_score = -1.0
+            best_key = None
+
+            for key, entry in self._cache.items():
+                if time.time() - entry.created_at > entry.ttl_seconds:
+                    continue
+                # Recalculate similarity (slow)
+                emb = np.array(entry.embedding, dtype=np.float32)
+                sim = float(np.dot(query_emb, emb))
+
+                if sim > best_score:
+                    best_score = sim
+                    best_key = key
+
+            if best_key and best_score >= threshold:
+                self._record_hit(best_key)
+                return [MemoryEntry(**r) for r in self._cache[best_key].results]
 
         self.misses += 1
         return None
 
     def store(self, query: MemoryQuery, results: List[MemoryEntry]) -> None:
-        """Cache retrieval results for a query."""
         query_text = self._query_to_text(query)
         query_emb = self.embedder.encode(query_text)
         key = self._make_key(query_text)
 
+        # Prepare entry
         entry = CacheEntry(
             query_key=key,
-            embedding=query_emb,
-            results=results,
+            embedding=query_emb.tolist(),
+            results=[asdict(r) for r in results],
             created_at=time.time(),
             last_accessed=time.time(),
             ttl_seconds=self.default_ttl,
@@ -219,49 +234,113 @@ class SemanticCache:
 
         self._cache[key] = entry
         self._cache.move_to_end(key)
+
+        # Add to Faiss
+        if self.use_faiss and self.index:
+            self.index.add(query_emb.reshape(1, -1))
+            self.id_to_key[self.next_id] = key
+            self.next_id += 1
+
         self._evict_if_needed()
 
-    def invalidate_domain(self, domain: str) -> int:
-        """Invalidate all cache entries related to a domain."""
-        to_remove = [k for k, v in self._cache.items() if domain in v.query_key]
-        for k in to_remove:
-            del self._cache[k]
-        if to_remove:
-            logger.debug(
-                f"SemanticCache: invalidated {len(to_remove)} entries for domain={domain}"
-            )
-        return len(to_remove)
+        # Auto-persist periodically (e.g., every 10 stores or if critical)
+        if len(self._cache) % 10 == 0:
+            self.save()
 
-    def clear(self) -> None:
-        """Clear all cache entries."""
-        self._cache.clear()
-        self.hits = 0
-        self.misses = 0
+    def _record_hit(self, key: str):
+        """Update hit stats and LRU."""
+        entry = self._cache[key]
+        entry.hit_count += 1
+        entry.last_accessed = time.time()
+        self._cache.move_to_end(key)
+        self.hits += 1
+        logger.debug("SemanticCache HIT key=%s", key[:8])
 
-    def get_stats(self) -> Dict:
-        """Return cache statistics."""
-        total = self.hits + self.misses
-        return {
-            "entries": len(self._cache),
-            "max_entries": self.max_entries,
-            "hits": self.hits,
-            "misses": self.misses,
-            "hit_rate": self.hits / total if total > 0 else 0.0,
-            "embedding_dim": self.embedder.dim,
-            "uses_transformer": self.embedder._use_transformer,
-        }
+    def save(self):
+        """Persist cache to disk."""
+        try:
+            # Save data
+            data = {
+                "entries": {k: asdict(v) for k, v in self._cache.items()},
+                "next_id": self.next_id,
+                "id_to_key": {str(k): v for k, v in self.id_to_key.items()},
+            }
+            with open(self.data_path, "w") as f:
+                json.dump(data, f)
 
-    # ------------------------------------------------------------------
-    # Internal helpers
-    # ------------------------------------------------------------------
+            # Save Faiss index
+            if self.use_faiss and self.index and faiss:
+                faiss.write_index(self.index, self.index_path)
+
+            logger.info("Persisted SemanticCache to %s", self.persist_dir)
+        except Exception as e:
+            logger.warning("Failed to save SemanticCache: %s", e)
+
+    def _load(self):
+        """Load cache from disk."""
+        if not os.path.exists(self.data_path):
+            return
+
+        try:
+            # Load data
+            with open(self.data_path, "r") as f:
+                data = json.load(f)
+
+            for k, v in data.get("entries", {}).items():
+                self._cache[k] = CacheEntry(**v)
+
+            self.next_id = data.get("next_id", 0)
+            # JSON keys are always strings, convert back to int for ID map
+            self.id_to_key = {int(k): v for k, v in data.get("id_to_key", {}).items()}
+
+            # Load Faiss index
+            if self.use_faiss and faiss and os.path.exists(self.index_path):
+                self.index = faiss.read_index(self.index_path)
+                logger.info("Loaded SemanticCache with %d entries", self.index.ntotal)
+            else:
+                # Rebuild index if missing
+                logger.info("Rebuilding Faiss index from data...")
+                self._rebuild_index()
+
+        except Exception as e:
+            logger.warning("Failed to load SemanticCache: %s", e)
+            # Reset on failure
+            self._cache.clear()
+            self.id_to_key.clear()
+            self.next_id = 0
+            if self.use_faiss:
+                self._init_faiss_index()
+
+    def _rebuild_index(self):
+        """Rebuild Faiss index from cached data."""
+        if not self.use_faiss or not self.index:
+            return
+
+        self._init_faiss_index()
+        self.id_to_key.clear()
+        self.next_id = 0
+
+        # Sort by creation time to maintain approximate ID order
+        sorted_entries = sorted(self._cache.items(), key=lambda x: x[1].created_at)
+
+        if not sorted_entries:
+            return
+
+        embeddings = []
+        keys = []
+
+        for k, entry in sorted_entries:
+            embeddings.append(entry.embedding)
+            keys.append(k)
+
+        if embeddings:
+            emb_matrix = np.array(embeddings, dtype=np.float32)
+            self.index.add(emb_matrix)
+            for i, k in enumerate(keys):
+                self.id_to_key[i] = k
+            self.next_id = len(keys)
 
     def _query_to_text(self, query: MemoryQuery) -> str:
-        """
-        Convert a MemoryQuery into a canonical text string for embedding.
-
-        Combines structured fields into a sentence-like representation
-        so the embedding captures the query's intent.
-        """
         parts = []
         if query.domain:
             parts.append(f"domain:{query.domain}")
@@ -284,15 +363,16 @@ class SemanticCache:
         return self.default_threshold
 
     def _evict_if_needed(self) -> None:
-        """Evict oldest entries (LRU) when cache exceeds max_entries."""
-        # Also remove expired entries
         now = time.time()
+        # Remove expired
         expired = [
             k for k, v in self._cache.items() if now - v.created_at > v.ttl_seconds
         ]
-        for k in expired:
-            del self._cache[k]
+        for key in expired:
+            del self._cache[key]
+            # Note: Removing from Faiss is hard/slow, we just ignore stale IDs on lookup
 
-        # LRU eviction
+        # LRU Eviction
         while len(self._cache) > self.max_entries:
-            self._cache.popitem(last=False)  # Remove oldest
+            key, _ = self._cache.popitem(last=False)
+            # Again, Faiss index grows indefinitely until rebuild, but data stays bounded

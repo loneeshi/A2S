@@ -302,6 +302,7 @@ class ALFWorldAgent:
         self.llm = llm_client
         self.model = model or llm_client.default_model
         self.conversation_history: List[Dict[str, str]] = []
+        self.working_context: Optional[Dict[str, Any]] = None
 
         logger.info(f"Initialized ALFWorld agent with model: {self.model}")
 
@@ -437,6 +438,22 @@ class ALFWorldAgent:
             ]
         )
 
+        if self.working_context:
+            prompt_parts.extend(["", "Working Memory:"])
+            if self.working_context.get("lessons_learned"):
+                prompt_parts.append("Lessons learned:")
+                for lesson in self.working_context["lessons_learned"]:
+                    prompt_parts.append(f"- {lesson}")
+            if self.working_context.get("known_errors"):
+                prompt_parts.append("Known errors to avoid:")
+                for err in self.working_context["known_errors"]:
+                    if isinstance(err, dict):
+                        prompt_parts.append(
+                            f"- {err.get('failure_type')}: {err.get('root_cause')}"
+                        )
+                    else:
+                        prompt_parts.append(f"- {err}")
+
         # Add recent history if available
         if history:
             prompt_parts.extend(["", "Recent actions and observations:"])
@@ -482,7 +499,9 @@ class ALFWorldAgent:
 
         return admissible_actions[0] if admissible_actions else "look around"
 
-    def reset(self):
-        """Reset conversation history for new episode"""
+    def reset(self, working_context: Optional[Dict[str, Any]] = None):
+        """Reset agent conversation history and working context"""
         self.conversation_history = []
+        self.working_context = working_context
+
         logger.debug("Reset agent conversation history")
