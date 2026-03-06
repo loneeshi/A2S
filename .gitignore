@@ -160,5 +160,8 @@ typeguard/
 !configs/**/*.yaml
 !benchmarks/**/*.yaml
 
+# Development docs (local only)
+develop_docs/
+
 # 需要学习的项目
 swarm-ide/

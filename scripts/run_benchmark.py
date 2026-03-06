@@ -43,8 +43,10 @@ from core.optimizer.performance_monitor import (
 )
 from core.optimizer.extension_engine import DynamicExtensionEngine
 from core.recorder.results import ResultsRecorder
-from core.memory import get_memory_manager
+from core.memory import get_memory_manager, MemoryType
 from core.reflection import get_reflection_agent
+from core.reflection.schema import PromptUpdateAction
+from core.reflection.schema import PromptUpdateAction
 
 logging.basicConfig(
     level=logging.INFO,
@@ -336,9 +338,11 @@ class BenchmarkRunner:
                 step_count = 0
                 episode_tokens = 0
                 episode_cache_hits = 0
+                trajectory_log = []  # Track full interaction for example harvesting
 
                 for step in range(self.max_steps):
                     step_count = step + 1
+                    current_obs = str(adapter.obs)
                     admissible = adapter._extract_admissible_commands(
                         adapter.last_info or adapter.infos
                     )
@@ -357,6 +361,8 @@ class BenchmarkRunner:
                     self.bridge.log(
                         worker_id, "tool_call", f"Step {step_count}: {action}"
                     )
+
+                    trajectory_log.append(f"Obs: {current_obs}\nAct: {action}")
 
                     last_resp = getattr(agent.llm, "_last_response", None)
                     usage = {}
@@ -432,6 +438,28 @@ class BenchmarkRunner:
                     duration=episode_time,
                 )
 
+                # Harvest successful example for dynamic prompting
+                if success:
+                    try:
+                        from core.prompts.example_store import ExampleStore, Example
+
+                        store = ExampleStore()
+                        store.add_example(
+                            Example(
+                                task_description=task_desc,
+                                trajectory="\n".join(trajectory_log),
+                                domain=self.benchmark,
+                                score=1.0,
+                            )
+                        )
+                        self.bridge.log(
+                            worker_id,
+                            "system",
+                            "Harvested new successful example for future prompts",
+                        )
+                    except Exception as ex_err:
+                        logger.warning(f"Failed to harvest example: {ex_err}")
+
                 if not success:
                     try:
                         failure_info = {
@@ -458,6 +486,38 @@ class BenchmarkRunner:
                             "system",
                             f"Reflection: {refl.failure_type} → {refl.prompt_update_action.value}",
                         )
+
+                        # Persist reflection to memory
+                        try:
+                            from core.memory import (
+                                ReflectionMemoryEntry,
+                                MemoryType as MType,
+                            )
+
+                            self.memory_manager.store(
+                                ReflectionMemoryEntry(
+                                    entry_id=refl.reflection_id,
+                                    memory_type=MType.REFLECTION,
+                                    domain=refl.domain,
+                                    task_type=refl.task_type,
+                                    agent_name=refl.agent_name,
+                                    created_at=refl.timestamp,
+                                    content=f"Failure Analysis: {refl.failure_type}. Root Cause: {refl.root_cause}",
+                                    tags=["reflection", "failure", refl.failure_type],
+                                    importance=0.9,
+                                    failure_type=refl.failure_type,
+                                    root_cause=refl.root_cause,
+                                    tools_involved=refl.tools_involved or [],
+                                    prompt_section_to_update=refl.prompt_update_action.value,
+                                    confidence=refl.confidence,
+                                )
+                            )
+                            logger.info(
+                                f"Stored reflection memory {refl.reflection_id}"
+                            )
+                        except Exception as mem_err:
+                            logger.warning(f"Failed to store reflection: {mem_err}")
+
                     except Exception as refl_err:
                         logger.debug(f"Episode reflection skipped: {refl_err}")
 

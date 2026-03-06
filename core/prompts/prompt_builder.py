@@ -141,29 +141,59 @@ You work within the {domain} domain to accomplish specific tasks efficiently.
 
         # Add role-specific structure
         if role in self.role_structures:
-            parts.append(self.role_structures[role])
+            parts.append(
+                f"<role_definition>\n{self.role_structures[role]}\n</role_definition>"
+            )
+
+        # Add dynamic context section (task context + memory + examples)
+        dynamic_parts = []
 
         # Add working context (lessons learned, known errors)
         if working_context:
-            parts.append(self._format_working_context(working_context))
+            dynamic_parts.append(self._format_working_context(working_context))
 
         # Add dynamic examples last (breaks cache but necessary)
-        if include_examples and task_context and role in self.dynamic_examples:
-            examples = self._select_relevant_examples(
-                self.dynamic_examples[role], task_context
-            )
+        if include_examples and task_context:
+            # Try specific role examples first, then fallback to domain generic
+            examples_source = self.dynamic_examples.get(role, "")
+            examples = self._select_relevant_examples(examples_source, task_context)
             if examples:
-                parts.append(examples)
+                dynamic_parts.append(examples)
+
+        if dynamic_parts:
+            parts.append(
+                f"<dynamic_context>\n{'\n\n'.join(dynamic_parts)}\n</dynamic_context>"
+            )
 
         return "\n\n" + "\n\n".join(parts)
 
     def _select_relevant_examples(
         self, all_examples: str, task_context: Dict[str, Any]
     ) -> str:
-        """Select examples relevant to current task context"""
-        # For now, return all examples
-        # TODO: Implement smart example selection based on task_context
-        return all_examples
+        """Select examples relevant to current task context using ExampleStore."""
+        task_desc = task_context.get("task_description") or task_context.get("task", "")
+        if not task_desc:
+            return all_examples  # Fallback to static examples
+
+        try:
+            from .example_store import ExampleStore
+
+            store = ExampleStore()
+            examples = store.retrieve_relevant(str(task_desc), self.domain, k=3)
+
+            if not examples:
+                return all_examples
+
+            formatted = ["## RELEVANT EXAMPLES (Dynamically Retrieved)"]
+            for ex in examples:
+                formatted.append(
+                    f"<example>\nTask: {ex.task_description}\nTrajectory:\n{ex.trajectory}\n</example>"
+                )
+
+            return "\n\n".join(formatted)
+        except Exception as e:
+            # logger.warning(f"Failed to retrieve dynamic examples: {e}")
+            return all_examples
 
     def _format_working_context(self, context: Dict[str, Any]) -> str:
         """Format working context for prompt injection."""
