@@ -1,198 +1,107 @@
-<<<<<<< HEAD
-# Auto-Expansion Agent Cluster Framework
+# A2S — Auto-Expansion Agent Cluster
 
-一个基于 few-shot 的自动化 Agent 集群扩展框架，支持在测试过程中动态生成和优化 agent tree。
+A multi-agent runtime framework where agent trees **auto-generate** from benchmark descriptions, **auto-expand** based on performance feedback, and **evolve skills** through a memory-driven learning loop.
 
-## 核心特性
+## Results
 
-- **📖 Benchmark 介绍系统**：结构化的 benchmark 元数据，agent 可以通过阅读理解任务类型
-- **🌳 自动 Tree 生成**：混合初始化（描述文件 + 环境探索）
-- **🔧 动态扩展机制**：测试中基于性能反馈自动扩展、修正、调整 agent tree
-- **💾 Prompt 缓存优化**：所有 agent prompts 采用 cache-optimized 结构，提高推理速度
+**ALFWorld** (30 episodes, gpt-4o-mini, max 50 steps):
 
-## 架构概览
+| Task Type | Success |
+|-----------|---------|
+| pick_and_place | 12/15 (80%) |
+| pick_clean_then_place | 4/7 (57%) |
+| pick_cool_then_place | 1/2 (50%) |
+| pick_heat_then_place | 1/3 (33%) |
+| examine | 1/3 (33%) |
+| **Total** | **19/30 (63.3%)** |
+
+## How It Works
 
 ```
-├── benchmarks/              # Benchmark 定义（仅元数据）
-├── core/                     # 框架核心
-│   ├── generator/           # Tree 生成器
-│   ├── optimizer/            # 动态优化器
-│   ├── prompts/             # 缓存优化 prompts
-│   └── discovery/           # 发现引擎（来自 A2S）
-├── configs/                  # 配置文件
-├── tests/                    # 测试（仅核心测试）
-└── scripts/                  # 实用脚本
+Read benchmark → Generate agent tree → Run episodes → Record performance
+       ↑                                                       ↓
+  Evolve skills ← Reflect on failures ← Extend tree if underperforming
 ```
 
-## 快速开始
+1. **Agent Tree Generation** — Read benchmark description, create orchestrator + specialized workers
+2. **Episode Execution** — LLM selects actions via tool calling, interacts with environment
+3. **Performance Monitoring** — Track per-agent, per-task-type success rates
+4. **Dynamic Extension** — Add/specialize/replicate workers when success rate drops
+5. **Reflection** — Batch-analyze failures → structured output → memory update
+6. **Skill Evolution** — Auto-generate new skills from failure patterns, inject into underperforming agents
 
-```bash
-# 1. 安装依赖
-pip install -r requirements.txt
+## Architecture
 
-# 2. 运行 StuLife benchmark
-python scripts/run_benchmark.py --benchmark stulife
+The runtime (`agenttree/`) is TypeScript, filesystem-based (agents `.md`, tools `.json`, skills `.md`, memory `.jsonl`):
 
-# 3. 查看缓存命中率
-python scripts/evaluate_cache_hits.py
 ```
-
-## 项目状态
-
-✅ 仓库结构已创建
-✅ .gitignore 已配置
-⏳ 核心框架开发中...
-
-## 仓库信息
-
-- **本地路径**: `/Users/dp/Agent_research/design/auto_expansion_agent/`
-- **远程仓库**: https://github.com/loneeshi/A2S
-=======
-# Agent Research - Lifelong Learning AI Agents
-
-![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)
-![License](https://img.shields.io/badge/License-MIT-green.svg)
-![Status](https://img.shields.io/badge/Status-Active-success.svg)
-
-## Overview
-
-This repository contains research on **AI Agent Development** focused on **lifelong learning** and **autonomous decision-making**. The project implements advanced AI agent architectures that can learn from experience, adapt to new situations, and continuously improve their performance over time.
-
-## Key Features
-
-- **🧠 Hierarchical Agent Architecture**: Root Agent → Specialized Managers → Workers
-- **💾 Three-Layer Memory System**: Task/Tool/Personal memory (ReMe)
-- **🔄 Self-Evolution Framework**: Continuous improvement through reflection
-- **🎯 LLM-Based Routing**: Reasoning-based task distribution
-- **🚀 High Performance**: 92.3% success rate on 1,284 campus life tasks
+agenttree/
+├── agents/          # Agent specs (frontmatter + prompt body)
+├── skills/          # Skill definitions
+├── tools/           # Tool JSON schemas (32 definitions)
+├── bridge/          # Python ALFWorld server + launcher
+├── examples/        # Benchmark runners + debug scripts
+├── src/
+│   ├── spec/        # Zod schemas (agent, skill, memory)
+│   ├── parser/      # Frontmatter parser (gray-matter)
+│   ├── tool/        # ToolRegistry + ToolExecutor
+│   ├── memory/      # JSONL MemoryStore + MemoryManager
+│   ├── skill/       # SkillManager + SkillEvolutionEngine
+│   ├── llm/         # OpenAI-compatible client
+│   ├── runtime/     # AgentRuntime, PromptBuilder, TreeRuntime
+│   ├── messaging/   # MessageBus + Delegator
+│   ├── reflection/  # Failure analysis engine
+│   ├── extension/   # PerformanceMonitor + DynamicExtensionEngine
+│   ├── bridge/      # BenchmarkBridge client
+│   └── utils/       # WorkspaceMerger
+├── package.json
+└── tsconfig.json
+benchmarks/
+├── alfworld/        # ALFWorld adapter + config
+└── stulife/         # StuLife benchmark intro
+```
 
 ## Quick Start
 
 ```bash
-# Clone repository
-git clone https://github.com/your-username/Agent_research.git
-cd Agent_research/design/A2S/Stulife
+# Prerequisites: Node.js, Python 3.12 with alfworld installed
 
 # Install dependencies
-pip install -r requirements.txt
+cd agenttree && npm install
 
-# Configure environment
-cp .env.example .env
-# Edit .env with your API keys
+# Set environment
+export OPENAI_API_KEY="your-key"
+export OPENAI_BASE_URL="https://api.openai.com/v1"  # or your relay
 
-# Run experiment
-python main.py --config config.yaml
+# Run ALFWorld benchmark (3 parallel workers, 30 episodes)
+npx tsx examples/run_benchmark_parallel.ts \
+  --parallel 3 --episodes 30 --max-steps 50 \
+  --extend --evolve
 ```
 
-For detailed instructions, see [version_docs/QUICK_START.md](version_docs/QUICK_START.md).
+### Runner Options
 
-## Project Structure
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--parallel N` | 1 | Number of parallel workers |
+| `--episodes N` | 30 | Total episodes to run |
+| `--max-steps N` | 50 | Max steps per episode |
+| `--extend` | off | Enable dynamic tree extension |
+| `--evolve` | off | Enable skill evolution |
+| `--cleanup` | off | Kill bridge servers after run |
+| `--base-port N` | 8765 | Starting port for bridge servers |
 
-```
-Agent_research/
-├── benchmarks/           # Evaluation frameworks
-│   ├── LifelongAgentBench/  # Lifelong learning benchmark
-│   └── ELL-StuLife/         # Campus environment benchmark
-├── design/              # Core implementations
-│   └── A2S/              # Agent-to-Skills framework
-│       └── Stulife/      # Campus life implementation
-│           ├── agents/      # Agent implementations
-│           ├── results/     # Experiment results
-│           │   └── campus_life_self_evolution/
-│           └── task_data/   # Task definitions
-├── version_docs/        # Version records and documentation
-└── docs/                # Additional documentation
-```
+## Dependencies
 
-## Documentation
+**Node.js** (runtime):
+- `gray-matter` — frontmatter parsing
+- `zod` — schema validation
+- `undici` — HTTP proxy support
 
-- [Project Overview](version_docs/PROJECT_OVERVIEW.md) - Complete project introduction
-- [Architecture](version_docs/ARCHITECTURE.md) - System architecture details
-- [Results](version_docs/RESULTS.md) - Experiment results and metrics
-- [Quick Start](version_docs/QUICK_START.md) - Getting started guide
-
-## Key Results
-
-**Campus Life Self-Evolution (v1.0.0):**
-- **Tasks**: 1,284 campus life tasks
-- **Success Rate**: 92.3%
-- **Execution Time**: 5-15 minutes (vs 30min-4h baseline)
-- **Action Count**: 50-150 actions (vs 200-2000 baseline)
-
-### Breakthrough Features
-
-- **Empty Instruction Tasks**: Agents autonomously determine what to do via calendar
-- **Self-Directed Learning**: No external prompting for routine tasks
-- **Continuous Improvement**: Performance increases through reflection
-- **Meta-Learning**: Knowledge transfers to novel situations
-
-## Architecture
-
-### A2S Framework (Agent-to-Skills)
-
-```
-Root Agent
-    ├── NavigationManager (5 workers)
-    ├── CourseSelectionManager (4 workers)
-    ├── EmailManager (3 workers)
-    ├── CalendarManager (3 workers)
-    └── ReservationManager (3 workers)
-```
-
-### ReMe Memory System
-
-```
-ReMe (Remember Me):
-├── Task Memory (strategies, patterns)
-├── Tool Memory (capabilities, effectiveness)
-└── Personal Memory (preferences, insights)
-```
-
-## Technology Stack
-
-- Python 3.11+
-- LangChain (agent framework)
-- OpenAI/Anthropic/Claude APIs (LLM)
-- YAML (configuration)
-- JSON (memory storage)
-
-## Benchmarks
-
-### ELL-StuLife Benchmark
-
-A comprehensive evaluation framework simulating university campus life:
-
-- **1,284 tasks** covering 4 years of student life
-- **142 empty instruction tasks** testing autonomous behavior
-- **Persistent world state** with dynamic subsystems
-- **Calendar-driven execution** requiring self-directed scheduling
-
-## Contributing
-
-We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+**Python** (ALFWorld bridge):
+- `alfworld` — environment
+- `pyyaml` — config parsing
 
 ## License
 
-[Your License Here]
-
-## Citation
-
-If you use this code in your research, please cite:
-
-```bibtex
-@software{agent_research_2025,
-  title={Agent Research: Lifelong Learning AI Agents},
-  author={[Your Name]},
-  year={2025},
-  url={https://github.com/your-username/Agent_research}
-}
-```
-
-## Contact
-
-[Your Contact Information]
-
----
-
-**Version**: 1.0.0 | **Status**: Active Research | **Last Updated**: 2025-01-30
->>>>>>> 24010b0 (feat: add utility scripts)
+MIT

@@ -1,30 +1,10 @@
 # Python
 __pycache__/
 *.py[cod]
-*$py.class
 *.so
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
 
-# Virtual Environment
-venv/
-ENV/
-env/
-.venv
+# Node
+node_modules/
 
 # IDE
 .vscode/
@@ -41,127 +21,25 @@ Thumbs.db
 .env
 .env.local
 .env.*.local
+!.env.example
 
 # Logs
 *.log
-logs/
-*.log.*
 
-# Data and state files
-*.json.bak
-agent_memory.json
-runs.json
-current_session.json
-checkpoint_state/
-callback_state/
-coredumpy/
-
-# Model artifacts
-*.pkl
-*.h5
-*.pt
-*.pth
-*.bin
-
-# Test coverage
-.coverage
-htmlcov/
-.pytest_cache/
-.tox/
-
-# Documentation
-docs/_build/
-docs/.doctrees/
-
-# Node modules (if any)
-node_modules/
-
-# Ralph
-.ralph/
-
-# Specific to this project
-design/A2S/Stulife/results/*/agent_memory.json
-design/A2S/Stulife/results/*/runs.json
-design/A2S/Stulife/results/*/current_session.json
-design/A2S/Stulife/results/*/checkpoint_state/
-design/A2S/Stulife/results/*/callback_state/
-design/A2S/Stulife/results/*/coredumpy/
-
-# Keep example configs but ignore real configs
-config.yaml
-!config.yaml.example
-*.env
-!*.env.example
-
-# 项目特定（关键：排除测试脚本和文档）
-test_*.py
-*_test.py
-extract_*.py
-verify_*.py
-run_*.sh
-test_*.sh
-
-# 但保留scripts目录中的脚本
-!scripts/**/*.py
-
-# 文档文件（版本更新文件可以保留在一个独立文件夹）
+# Markdown (block stray docs, whitelist agenttree content)
 *.md
 !README.md
-!version_docs/**/*.md
 !agenttree/**/*.md
 
-# API Keys（关键）
-.env
-*.env
-*api_key*
-*apikey*
-secrets/
-credentials/
-
-# 数据和临时文件
-*.log
-*.json.bak
-data/
-task_data/
-chat_history_items/
-
-# Results directory (keep structure but ignore data files)
-results/*.json
-results/*.csv
-results/*/*.json
-results/*/*.csv
-!results/.gitkeep
-!results/*/.gitkeep
-!results/README.md
-
-# 排除编译文件
-*.pyc
-*.pyo
-
-# Exclude test artifacts
-.pytest_cache/
-.coverage/
-htmlcov/
-
-# Exclude JetBrains IDE
-.idea/
-
-# Exclude VS Code
-.vscode/
-
-# Exclude Jupyter Notebook
-.ipynb_checkpoints/
-
-# Exclude python type checking
-typeguard/
-
-# 保留配置文件
+# YAML configs (keep)
 !*.yaml
-!configs/**/*.yaml
 !benchmarks/**/*.yaml
 
 # Development docs (local only)
 develop_docs/
 
-# 需要学习的项目
-swarm-ide/
+# Secrets
+*api_key*
+*apikey*
+secrets/
+credentials/
