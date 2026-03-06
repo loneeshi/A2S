@@ -1,0 +1,22 @@
+{
+  "name": "@auto-expansion/agenttree",
+  "version": "0.1.0",
+  "description": "Agent tree management framework — agent spec, tool, memory, skill lifecycle",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "lint": "tsc --noEmit"
+  },
+  "dependencies": {
+    "gray-matter": "^4.0.3",
+    "undici": "^7.22.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.6.0"
+  }
+}

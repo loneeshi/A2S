@@ -1,0 +1,14 @@
+{
+  "id": "map.find_building_id",
+  "description": "Find a campus building's ID by its name",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "name": {
+        "type": "string",
+        "description": "The building name to look up (e.g., 'library', 'science hall')"
+      }
+    },
+    "required": ["name"]
+  }
+}

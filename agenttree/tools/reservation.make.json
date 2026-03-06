@@ -1,0 +1,26 @@
+{
+  "id": "reservation.make",
+  "description": "Make a reservation for a campus facility or room",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "facility": {
+        "type": "string",
+        "description": "Facility or room name to reserve"
+      },
+      "date": {
+        "type": "string",
+        "description": "Reservation date"
+      },
+      "time": {
+        "type": "string",
+        "description": "Reservation start time"
+      },
+      "duration": {
+        "type": "string",
+        "description": "Reservation duration (e.g., '2h')"
+      }
+    },
+    "required": ["facility", "date", "time"]
+  }
+}

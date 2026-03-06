@@ -1,0 +1,14 @@
+{
+  "id": "email.read",
+  "description": "Read the full contents of an email by its ID",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "email_id": {
+        "type": "string",
+        "description": "The email ID to read"
+      }
+    },
+    "required": ["email_id"]
+  }
+}

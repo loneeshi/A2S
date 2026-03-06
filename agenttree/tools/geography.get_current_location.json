@@ -1,0 +1,9 @@
+{
+  "id": "geography.get_current_location",
+  "description": "Get the agent's current location on campus",
+  "parameters": {
+    "type": "object",
+    "properties": {},
+    "required": []
+  }
+}

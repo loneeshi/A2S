@@ -108,6 +108,7 @@ test_*.sh
 *.md
 !README.md
 !version_docs/**/*.md
+!agenttree/**/*.md
 
 # API Keys（关键）
 .env

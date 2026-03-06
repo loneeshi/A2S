@@ -1,0 +1,22 @@
+{
+  "id": "email.forward",
+  "description": "Forward an email to another recipient",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "email_id": {
+        "type": "string",
+        "description": "The email ID to forward"
+      },
+      "to": {
+        "type": "string",
+        "description": "Recipient to forward the email to"
+      },
+      "body": {
+        "type": "string",
+        "description": "Optional message to include with the forwarded email"
+      }
+    },
+    "required": ["email_id", "to"]
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "id": "reservation.cancel",
+  "description": "Cancel an existing reservation",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "reservation_id": {
+        "type": "string",
+        "description": "The reservation ID to cancel"
+      }
+    },
+    "required": ["reservation_id"]
+  }
+}

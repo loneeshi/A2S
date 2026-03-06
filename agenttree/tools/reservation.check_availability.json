@@ -1,0 +1,18 @@
+{
+  "id": "reservation.check_availability",
+  "description": "Check availability of a campus facility",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "facility": {
+        "type": "string",
+        "description": "Facility or room name to check"
+      },
+      "date": {
+        "type": "string",
+        "description": "Date to check availability for"
+      }
+    },
+    "required": ["facility", "date"]
+  }
+}

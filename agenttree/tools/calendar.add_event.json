@@ -1,0 +1,26 @@
+{
+  "id": "calendar.add_event",
+  "description": "Add an event to the calendar",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "title": {
+        "type": "string",
+        "description": "Event title"
+      },
+      "date": {
+        "type": "string",
+        "description": "Event date (e.g., 'Monday', 'Week 2 Tuesday')"
+      },
+      "time": {
+        "type": "string",
+        "description": "Event time (e.g., '14:00')"
+      },
+      "duration": {
+        "type": "string",
+        "description": "Event duration (e.g., '1h', '30m')"
+      }
+    },
+    "required": ["title", "date", "time"]
+  }
+}
