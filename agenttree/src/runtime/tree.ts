@@ -26,6 +26,7 @@ import { AgentStore } from "../spec/store"
 import { ToolRegistry } from "../tool/registry"
 import { ToolExecutor, type ToolHandler } from "../tool/executor"
 import { MemoryManager } from "../memory/manager"
+import type { Mem0Bridge } from "../memory/mem0-bridge"
 import { SkillManager } from "../skill/manager"
 import { LLMClient, type LLMClientOptions } from "../llm/client"
 import { MessageBus } from "../messaging/bus"
@@ -43,6 +44,7 @@ export interface TreeRuntimeOptions {
   llmOptions: LLMClientOptions
   toolHandlers?: Record<string, ToolHandler>
   extensionThreshold?: number
+  mem0?: Mem0Bridge
 }
 
 export class TreeRuntime {
@@ -67,7 +69,7 @@ export class TreeRuntime {
     this.toolExecutor = new ToolExecutor()
     this.toolRegistry = new ToolRegistry(join(options.baseDir, "tools"))
     this.skillManager = new SkillManager(join(options.baseDir, "skills"))
-    this.memoryManager = new MemoryManager(join(options.baseDir, "memory"))
+    this.memoryManager = new MemoryManager(join(options.baseDir, "memory"), options.mem0)
 
     if (options.toolHandlers) {
       this.toolExecutor.registerMany(options.toolHandlers)
@@ -83,6 +85,7 @@ export class TreeRuntime {
     this.extension = new DynamicExtensionEngine({
       baseDir: options.baseDir,
       monitor: this.monitor,
+      llm: this.llm,
       extensionThreshold: options.extensionThreshold,
     })
     this.router = new AgentRouter(this.agents)
@@ -170,6 +173,18 @@ export class TreeRuntime {
       }
       const reflections = await this.reflection.analyzeBatch([failure])
       await this.reflection.applyToMemory(reflections)
+
+      if (this.memoryManager.hasMem0()) {
+        for (const r of reflections) {
+          if (r.confidence >= 0.3) {
+            await this.memoryManager.addLesson(
+              r.agentId,
+              `[${r.failureType}] ${r.rootCause}`,
+              { errorPattern: r.errorPattern, taskType: r.taskType },
+            )
+          }
+        }
+      }
     }
 
     return result
@@ -179,6 +194,15 @@ export class TreeRuntime {
     const proposals = await this.extension.checkAndExtend()
     if (proposals.length > 0) {
       await this.reload()
+
+      if (this.memoryManager.hasMem0()) {
+        for (const p of proposals) {
+          await this.memoryManager.addOrgKnowledge(
+            `Extension created: ${JSON.stringify(p)}`,
+            { type: "extension_record" },
+          )
+        }
+      }
     }
     return proposals.length
   }
@@ -215,6 +239,20 @@ export class TreeRuntime {
         input: task,
         successCheck: options?.successCheck,
         runOptions: options?.runOptions,
+      })
+
+      this.monitor.recordSubtask({
+        taskId: `delegate_${Date.now()}`,
+        subtaskIndex: 0,
+        subtaskType: workerId.replace(/_worker$/, ""),
+        workerId,
+        success: result.success,
+        toolCalls: (result.toolCalls ?? []).map((tc) => ({
+          tool: tc.tool,
+          args: tc.args,
+          result: tc.result,
+        })),
+        errorMessage: result.error,
       })
 
       const traceLines: string[] = []

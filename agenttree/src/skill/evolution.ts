@@ -16,7 +16,7 @@
  */
 
 import type { LLMClient } from "../llm/client"
-import type { SkillSpec } from "../spec/skill"
+import type { SkillSpec, SkillSpecInput } from "../spec/skill"
 import type { ReflectionOutput } from "../reflection/types"
 import type { PerformanceStats } from "../extension/types"
 import { SkillManager } from "./manager"
@@ -95,12 +95,13 @@ export class SkillEvolutionEngine {
       }
 
       const content = await this.generateSkillContent(domain, taskType, group)
-      const spec: SkillSpec = {
+      const spec: SkillSpecInput = {
         id: skillId,
         description: `Auto-generated skill for ${taskType} tasks based on ${group.length} failure reflections`,
         whenToUse: `When handling ${taskType} tasks, especially to avoid: ${pattern}`,
         steps: this.extractSteps(group),
         tags: [domain, taskType, "auto-generated"],
+        generatedBy: "evolution",
       }
 
       await this.skillManager.create(spec, content)
@@ -360,7 +361,7 @@ Requirements:
     ).length
     if (timeoutCount >= 3 && !this.generatedSkills.has("common/efficiency_auto")) {
       const skillId = "common/efficiency_auto"
-      const spec: SkillSpec = {
+      const spec: SkillSpecInput = {
         id: skillId,
         description: "Efficiency strategies to avoid timeout failures",
         whenToUse:

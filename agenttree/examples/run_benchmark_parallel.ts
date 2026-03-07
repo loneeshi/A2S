@@ -32,6 +32,7 @@ import { BenchmarkBridge } from "../src/bridge/client"
 import { SkillEvolutionEngine } from "../src/skill/evolution"
 import { WorkspaceMerger } from "../src/utils/merge"
 import { SkillManager } from "../src/skill/manager"
+import { Mem0Bridge } from "../src/memory/mem0-bridge"
 import { join } from "node:path"
 import { cp, mkdir, rm, writeFile, appendFile } from "node:fs/promises"
 import type { ReflectionOutput } from "../src/reflection/types"
@@ -50,6 +51,7 @@ interface Config {
   maxSteps: number
   extend: boolean
   evolve: boolean
+  mem0: boolean
   split: string
   autoStart: boolean
   basePort: number
@@ -77,6 +79,7 @@ function parseArgs(): Config {
     maxSteps: 50,
     extend: false,
     evolve: false,
+    mem0: false,
     split: "train",
     autoStart: true,
     basePort: 8765,
@@ -91,6 +94,7 @@ function parseArgs(): Config {
       case "--max-steps":   c.maxSteps = parseInt(args[++i], 10); break
       case "--extend":      c.extend = true; break
       case "--evolve":      c.evolve = true; c.extend = true; break
+      case "--mem0":         c.mem0 = true; break
       case "--split":       c.split = args[++i]; break
       case "--no-auto-start": c.autoStart = false; break
       case "--base-port":   c.basePort = parseInt(args[++i], 10); break
@@ -149,6 +153,7 @@ async function createWorker(
   workerId: number,
   config: Config,
   skipEpisodes: number = 0,
+  mem0?: Mem0Bridge,
 ): Promise<Worker> {
   const dir = await createWorkerDir(workerId)
   const port = config.basePort + workerId
@@ -170,6 +175,7 @@ async function createWorker(
     llmOptions: { apiKey, baseURL, defaultModel: config.model },
     toolHandlers: bridge.createToolHandlers(),
     extensionThreshold: config.extend ? 0.5 : undefined,
+    mem0,
   })
 
   tree.registerDelegateTool({
@@ -222,7 +228,17 @@ async function runEpisode(
     admissible.length > 0
       ? `\n\nAdmissible commands: ${admissible.slice(0, 15).join(", ")}${admissible.length > 15 ? ` ... +${admissible.length - 15} more` : ""}`
       : ""
-  const input = `Task: ${task}${admissibleHint}\n\nDecompose this task into subtasks and delegate to your workers. Pass environment state between workers.`
+
+  let mem0Hint = ""
+  const memMgr = worker.tree.getMemoryManager()
+  if (memMgr.hasMem0()) {
+    const memories = await memMgr.searchForManager(task, 3)
+    if (memories.length > 0) {
+      mem0Hint = `\n\n<past_experience>\n${memories.map((m) => `- ${m.content}`).join("\n")}\n</past_experience>`
+    }
+  }
+
+  const input = `Task: ${task}${admissibleHint}${mem0Hint}\n\nDecompose this task into subtasks and delegate to your workers. Pass environment state between workers.`
 
   let steps = 0
   let success = false
@@ -272,6 +288,7 @@ async function runWorkerLoop(
   await worker.tree.loadAll()
 
   for (const ep of episodes) {
+    const episodeStart = Date.now()
     const result = await runEpisode(worker, ep, config)
     worker.results.push(result)
 
@@ -291,6 +308,49 @@ async function runWorkerLoop(
       const refs = await worker.tree.reflection.analyzeBatch([failure])
       await worker.tree.reflection.applyToMemory(refs)
       worker.reflections.push(...refs)
+
+      const memMgr = worker.tree.getMemoryManager()
+      if (memMgr.hasMem0()) {
+        for (const r of refs) {
+          if (r.confidence >= 0.3) {
+            await memMgr.addLesson(
+              r.agentId,
+              `[${r.taskType}] ${r.rootCause}`,
+              { errorPattern: r.errorPattern, failureType: r.failureType },
+            )
+          }
+        }
+      }
+    }
+
+    // Store successful strategies to mem0
+    if (result.success) {
+      const memMgr = worker.tree.getMemoryManager()
+      if (memMgr.hasMem0()) {
+        await memMgr.addSemanticMemory(
+          "alfworld_manager",
+          `Successfully completed ${result.taskType} task: "${result.task}" in ${result.steps} delegation steps.`,
+          { taskType: result.taskType, steps: result.steps },
+        )
+      }
+    }
+
+    // Probation tracking — update extension-created entities after each episode
+    if (config.extend) {
+      const probation = worker.tree.extension.getProbationEntities()
+      if (probation.length > 0) {
+        const involvedWorkers = worker.tree.monitor.getWorkersSince(episodeStart)
+        for (const entity of probation) {
+          if (entity.type === "worker") {
+            const workerResults = involvedWorkers.filter((w) => w.workerId === entity.entityId)
+            for (const wr of workerResults) {
+              worker.tree.extension.updateProbation(entity.entityId, wr.success)
+            }
+          } else if (entity.type === "skill") {
+            worker.tree.extension.updateProbation(entity.entityId, result.success)
+          }
+        }
+      }
     }
 
     // Extension + skill evolution check every N episodes
@@ -299,6 +359,12 @@ async function runWorkerLoop(
       const newAgents = await worker.tree.checkAndExtend()
       if (newAgents > 0) {
         console.log(`  [w${worker.id}] extended tree: +${newAgents} agent(s)`)
+        // Re-register delegate tool so the manager's prompt lists new workers
+        worker.tree.registerDelegateTool({
+          managerId: "alfworld_manager",
+          successCheck: () => worker.bridge.getIsDone(),
+          runOptions: { maxIterations: 25, model: config.model },
+        })
       }
 
       if (worker.skillEvolution && worker.reflections.length >= 2) {
@@ -308,6 +374,11 @@ async function runWorkerLoop(
           console.log(`  [w${worker.id}] evolved skills: ${evolved.map((e) => e.skillId).join(", ")}`)
           // Reload agents to pick up new skill assignments
           await worker.tree.reload()
+          worker.tree.registerDelegateTool({
+            managerId: "alfworld_manager",
+            successCheck: () => worker.bridge.getIsDone(),
+            runOptions: { maxIterations: 25, model: config.model },
+          })
         }
         // Clear reflections that have been processed
         worker.reflections = []
@@ -322,6 +393,19 @@ async function runWorkerLoop(
 }
 
 // ─── Summary & merge ───────────────────────────────────────────────────
+
+function printExtensionSummary(workers: Worker[]): void {
+  const allHistory = workers.flatMap((w) => w.tree.extension.getHistory())
+  if (allHistory.length === 0) return
+
+  console.log("\n  Extension activity:")
+  for (const record of allHistory) {
+    const perf = `${(record.performance.successRate * 100).toFixed(0)}% (${record.performance.tasksHandled} tasks)`
+    const baseline = `baseline ${(record.performance.baselineRate * 100).toFixed(0)}%`
+    const status = record.status === "active" ? "✓ promoted" : record.status === "disabled" ? "✗ disabled" : "⏳ probation"
+    console.log(`    ${record.type} ${record.entityId.padEnd(30)} ${status}  ${perf} vs ${baseline}`)
+  }
+}
 
 function printSummary(results: EpisodeResult[]): void {
   const total = results.length
@@ -380,12 +464,27 @@ async function main() {
   console.log(`  Max steps: ${config.maxSteps}`)
   console.log(`  Extension: ${config.extend ? "on" : "off"}`)
   console.log(`  Skill evo: ${config.evolve ? "on" : "off"}`)
+  console.log(`  Mem0:      ${config.mem0 ? "on" : "off"}`)
   console.log(`  Ports:     ${config.basePort}..${config.basePort + config.parallel - 1}`)
 
   const apiKey = process.env.OPENAI_API_KEY
   if (!apiKey) {
     console.error("\nError: OPENAI_API_KEY required.")
     process.exit(1)
+  }
+
+  let mem0: Mem0Bridge | undefined
+  if (config.mem0) {
+    const baseURL = process.env.OPENAI_BASE_URL || "https://api.openai.com/v1"
+    mem0 = new Mem0Bridge({
+      apiKey,
+      baseUrl: baseURL,
+      extractionModel: "gpt-4.1-nano",
+      embeddingModel: "text-embedding-ada-002",
+      historyDbPath: join(BASE_DIR, "memory", "mem0_history.db"),
+      collectionName: "a2s_benchmark",
+    })
+    console.log(`\n  Mem0 initialized (collection: a2s_benchmark)`)
   }
 
   // Distribute episodes contiguously (for disjoint ALFWorld game coverage)
@@ -407,7 +506,7 @@ async function main() {
   const workers: Worker[] = []
   for (let i = 0; i < config.parallel; i++) {
     const skipGames = i * perWorker
-    const worker = await createWorker(i, config, skipGames)
+    const worker = await createWorker(i, config, skipGames, mem0)
     workers.push(worker)
     console.log(`   w${i}: ${worker.dir} (port ${config.basePort + i})`)
   }
@@ -427,6 +526,13 @@ async function main() {
 
   console.log(`\n3. All episodes complete in ${elapsed}s`)
   printSummary(allResults)
+  if (config.extend) {
+    printExtensionSummary(workers)
+  }
+  if (mem0) {
+    const mem0Stats = await mem0.stats()
+    console.log(`\n  Mem0 stats: ${mem0Stats.org} org-level memories`)
+  }
 
   // 4. Merge back
   console.log("\n4. Merging worker results back to main workspace...")
@@ -465,6 +571,18 @@ async function main() {
           rate: allResults.filter((r) => r.success).length / allResults.length,
         },
         episodes: allResults,
+        extension: config.extend
+          ? {
+              history: workers.flatMap((w) => w.tree.extension.getHistory()),
+              monitorStats: workers.map((w) => ({
+                workerId: w.id,
+                stats: w.tree.monitor.getStats(),
+              })),
+            }
+          : undefined,
+        mem0: config.mem0
+          ? { enabled: true, stats: await mem0!.stats() }
+          : undefined,
       },
       null,
       2,

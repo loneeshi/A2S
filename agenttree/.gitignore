@@ -3,7 +3,7 @@ node_modules/
 
 # Runtime data (regenerated per run)
 runs/
-memory/
+/memory/
 results/
 
 # Development docs (local only)

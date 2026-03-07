@@ -1,6 +1,6 @@
 ---
-id: alfworld/task_decomposition
 description: How to decompose ALFWorld tasks into worker subtasks
+type: task
 whenToUse: When receiving any ALFWorld task as manager
 steps:
   - Identify task type from the task description
@@ -10,7 +10,10 @@ tags:
   - alfworld
   - manager
   - decomposition
-version: 0.1.0
+version: 0.2.0
+invocation:
+  modelCanInvoke: true
+  userCanInvoke: false
 ---
 
 ## Task Type Identification
@@ -24,6 +27,36 @@ Read the task description and classify:
 | "hot" or "heat" or "put a hot" | pick_heat_then_place |
 | "cool" or "cold" or "put a cool" | pick_cool_then_place |
 | "examine" or "look at ... under" | examine |
+
+## Decomposition Patterns
+
+### pick_and_place
+1. **search_worker**: Find the target object → report object name + location
+2. **manipulation_worker**: Pick up the object → report holding status
+3. **manipulation_worker**: Navigate to destination and place → report completion
+
+### pick_heat_then_place
+1. **search_worker**: Find the target object
+2. **manipulation_worker**: Pick up the object
+3. **appliance_worker**: Heat the object using microwave
+4. **manipulation_worker**: Take from microwave, navigate to destination, place
+
+### pick_cool_then_place
+1. **search_worker**: Find the target object
+2. **manipulation_worker**: Pick up the object
+3. **appliance_worker**: Cool the object using fridge
+4. **manipulation_worker**: Take from fridge, navigate to destination, place
+
+### pick_clean_then_place
+1. **search_worker**: Find the target object
+2. **manipulation_worker**: Pick up the object
+3. **appliance_worker**: Clean the object using sinkbasin
+4. **manipulation_worker**: Navigate to destination and place
+
+### examine
+1. **search_worker**: Find the target object
+2. **manipulation_worker**: Pick up the object
+3. **search_worker**: Find a lamp/desklamp and use it to examine
 
 ## Context Passing Between Workers
 
