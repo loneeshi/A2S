@@ -33,6 +33,7 @@ import { Delegator } from "../messaging/delegate"
 import { ReflectionEngine } from "../reflection/engine"
 import { PerformanceMonitor } from "../extension/monitor"
 import { DynamicExtensionEngine } from "../extension/engine"
+import { AgentRouter } from "./router"
 import type { FailureInfo } from "../reflection/types"
 import type { DelegateResult } from "../messaging/types"
 import { join } from "node:path"
@@ -58,6 +59,7 @@ export class TreeRuntime {
   readonly reflection: ReflectionEngine
   readonly monitor: PerformanceMonitor
   readonly extension: DynamicExtensionEngine
+  readonly router: AgentRouter
 
   constructor(options: TreeRuntimeOptions) {
     this.baseDir = options.baseDir
@@ -83,6 +85,7 @@ export class TreeRuntime {
       monitor: this.monitor,
       extensionThreshold: options.extensionThreshold,
     })
+    this.router = new AgentRouter(this.agents)
   }
 
   async loadAll(): Promise<number> {
@@ -186,6 +189,52 @@ export class TreeRuntime {
 
   registerTools(tools: Record<string, ToolHandler>): void {
     this.toolExecutor.registerMany(tools)
+  }
+
+  registerDelegateTool(options?: {
+    managerId?: string
+    successCheck?: () => boolean
+    runOptions?: RunOptions
+  }): void {
+    const fromId = options?.managerId ?? "alfworld_manager"
+
+    this.toolExecutor.register("delegate", async (args) => {
+      const workerId = args.worker_id as string
+      const task = args.task as string
+
+      if (!this.agents.has(workerId)) {
+        const available = Array.from(this.agents.keys())
+          .filter((id) => this.agents.get(id)?.spec.role === "worker")
+          .join(", ")
+        return `Error: Worker "${workerId}" not found. Available workers: ${available}`
+      }
+
+      const result = await this.delegator.delegate({
+        from: fromId,
+        to: workerId,
+        input: task,
+        successCheck: options?.successCheck,
+        runOptions: options?.runOptions,
+      })
+
+      const traceLines: string[] = []
+      if (result.toolCalls && result.toolCalls.length > 0) {
+        traceLines.push("## Execution Trace")
+        for (const tc of result.toolCalls) {
+          const argsStr = Object.entries(tc.args).map(([k, v]) => `${k}="${v}"`).join(", ")
+          traceLines.push(`> ${tc.tool}(${argsStr})`)
+          traceLines.push(`  → ${tc.result.slice(0, 300)}`)
+        }
+      }
+
+      const trace = traceLines.join("\n")
+
+      if (result.success) {
+        return `SUCCESS: Worker ${workerId} completed the subtask.\n\n${trace}\n\n## Worker Response\n${result.output.slice(0, 500)}`
+      } else {
+        return `FAILED: Worker ${workerId} did not complete the subtask.\n\n${trace}\n\n## Worker Response\n${result.output.slice(0, 500)}${result.error ? `\n\n## Error\n${result.error}` : ""}`
+      }
+    })
   }
 
   getMemoryManager(): MemoryManager {

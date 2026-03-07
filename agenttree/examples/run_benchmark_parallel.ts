@@ -113,31 +113,6 @@ function guessTaskType(task: string): string {
   return "unknown"
 }
 
-function selectWorker(benchmark: string, task: string): string {
-  if (benchmark === "alfworld") {
-    const taskType = guessTaskType(task)
-    // Manipulation tasks: pick/place/clean/heat/cool all require env.take, env.put, etc.
-    if (taskType.startsWith("pick_") || taskType === "pick_and_place") return "manipulation_worker"
-    // Toggle/use tasks
-    if (taskType === "toggle") return "interaction_worker"
-    // Examine tasks also need take/put (e.g. "examine X under desklamp")
-    if (taskType === "examine") return "manipulation_worker"
-    // Default to manipulation — it has the broadest tool set
-    return "manipulation_worker"
-  }
-  if (benchmark === "stulife") {
-    const l = task.toLowerCase()
-    if (l.includes("email") || l.includes("mail")) return "email_worker"
-    if (l.includes("course") || l.includes("register")) return "course_worker"
-    return "calendar_worker"
-  }
-  return "manipulation_worker"
-}
-
-function selectCoordinator(benchmark: string): string {
-  return benchmark === "stulife" ? "stulife_coordinator" : "task_coordinator"
-}
-
 // ─── Worker setup ──────────────────────────────────────────────────────
 
 interface Worker {
@@ -197,6 +172,12 @@ async function createWorker(
     extensionThreshold: config.extend ? 0.5 : undefined,
   })
 
+  tree.registerDelegateTool({
+    managerId: "alfworld_manager",
+    successCheck: () => bridge.getIsDone(),
+    runOptions: { maxIterations: 25, model: config.model },
+  })
+
   const skillEvolution = config.evolve
     ? new SkillEvolutionEngine({
         baseDir: dir,
@@ -220,6 +201,12 @@ async function createWorker(
 
 // ─── Episode execution ─────────────────────────────────────────────────
 
+function selectManager(benchmark: string): string {
+  if (benchmark === "alfworld") return "alfworld_manager"
+  if (benchmark === "stulife") return "stulife_coordinator"
+  return "alfworld_manager"
+}
+
 async function runEpisode(
   worker: Worker,
   episodeNum: number,
@@ -228,14 +215,14 @@ async function runEpisode(
   const resetResult = await worker.bridge.reset()
   const task = resetResult.task
   const taskType = guessTaskType(task)
-  const agentUsed = selectWorker(config.benchmark, task)
+  const managerId = selectManager(config.benchmark)
 
   const admissible = resetResult.admissible_commands
   const admissibleHint =
     admissible.length > 0
       ? `\n\nAdmissible commands: ${admissible.slice(0, 15).join(", ")}${admissible.length > 15 ? ` ... +${admissible.length - 15} more` : ""}`
       : ""
-  const input = `Task: ${task}${admissibleHint}\n\nSolve this task step by step. Use your tools to interact with the environment.`
+  const input = `Task: ${task}${admissibleHint}\n\nDecompose this task into subtasks and delegate to your workers. Pass environment state between workers.`
 
   let steps = 0
   let success = false
@@ -244,36 +231,34 @@ async function runEpisode(
   const logLine = (msg: string) =>
     console.log(`  [w${worker.id}] ep${episodeNum}: ${msg}`)
 
-  logLine(`${taskType} → ${agentUsed}`)
+  logLine(`${taskType} → ${managerId}`)
 
   try {
-    // Run the worker agent directly (bypass tree.delegate to avoid
-    // incorrect success recording in the PerformanceMonitor)
-    const result = await worker.tree.run(agentUsed, input, {
+    const result = await worker.tree.run(managerId, input, {
       maxIterations: config.maxSteps,
       model: config.model,
-      onToolCall: () => { steps++ },
+      onToolCall: (name) => {
+        steps++
+        if (name === "delegate") logLine(`  delegate #${steps}`)
+      },
     })
-    steps = result.toolCalls.length
     success = worker.bridge.getIsDone()
   } catch (err) {
     error = err instanceof Error ? err.message : String(err)
   }
 
-  logLine(`${success ? "✓" : "✗"} (${steps} steps)`)
+  logLine(`${success ? "✓" : "✗"} (${steps} delegate calls)`)
 
-  // Correct the monitor stats — tree.delegate() records execution success,
-  // but we need actual task success (bridge.getIsDone()) for extension/evolution.
   worker.tree.monitor.record({
     taskId: `ep_${episodeNum}`,
     taskType,
-    agentUsed,
+    agentUsed: managerId,
     success,
     errorMessage: success ? undefined : (error ?? `Task not completed in ${steps} steps`),
-    metadata: { episode: episodeNum, corrected: true },
+    metadata: { episode: episodeNum },
   })
 
-  return { workerId: worker.id, episode: episodeNum, task, taskType, success, steps, agentUsed, error }
+  return { workerId: worker.id, episode: episodeNum, task, taskType, success, steps, agentUsed: managerId, error }
 }
 
 // ─── Worker loop ───────────────────────────────────────────────────────

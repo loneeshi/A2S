@@ -8,7 +8,7 @@ export const ToolPolicySchema = z.object({
 export type ToolPolicy = z.infer<typeof ToolPolicySchema>
 
 export const MemoryConfigSchema = z.object({
-  mode: z.enum(["light", "off"]).default("light"),
+  mode: z.enum(["light", "full", "off"]).default("light"),
   store: z.enum(["jsonl", "sqlite"]).default("jsonl"),
   ttlHours: z.number().positive().optional(),
   capacity: z.number().int().positive().default(200),

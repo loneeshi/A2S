@@ -15,7 +15,7 @@
 
 import type { AgentRuntime } from "../runtime/agent"
 import type { RunOptions } from "../runtime/types"
-import type { DelegateRequest, DelegateResult } from "./types"
+import type { DelegateResult } from "./types"
 import { MessageBus } from "./bus"
 
 let _taskId = 0
@@ -33,17 +33,10 @@ export class Delegator {
       input: string
       metadata?: Record<string, unknown>
       runOptions?: RunOptions
+      successCheck?: () => boolean
     },
   ): Promise<DelegateResult> {
     const taskId = `task_${Date.now()}_${++_taskId}`
-
-    const request: DelegateRequest = {
-      taskId,
-      from: params.from,
-      to: params.to,
-      input: params.input,
-      metadata: params.metadata,
-    }
 
     await this.bus.send({
       from: params.from,
@@ -76,11 +69,13 @@ export class Delegator {
     try {
       const runResult = await agent.run(params.input, params.runOptions)
 
+      const success = params.successCheck ? params.successCheck() : true
+
       const result: DelegateResult = {
         taskId,
         from: params.to,
         to: params.from,
-        success: true,
+        success,
         output: runResult.response,
         toolCalls: runResult.toolCalls.map((tc) => ({
           tool: tc.tool,

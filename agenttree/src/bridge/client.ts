@@ -73,7 +73,7 @@ export class BenchmarkBridge {
     if (this.options.autoStart !== false) {
       await this.startServer()
     }
-    await this.waitForServer(30_000)
+    await this.waitForServer(120_000)
   }
 
   async stop(): Promise<void> {
