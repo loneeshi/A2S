@@ -479,7 +479,7 @@ async function main() {
     mem0 = new Mem0Bridge({
       apiKey,
       baseUrl: baseURL,
-      extractionModel: "gpt-4.1-nano",
+      extractionModel: "gpt-4o-mini",
       embeddingModel: "text-embedding-ada-002",
       historyDbPath: join(BASE_DIR, "memory", "mem0_history.db"),
       collectionName: "a2s_benchmark",

@@ -75,7 +75,7 @@ export class Mem0Bridge {
       llm: {
         provider: "openai",
         config: {
-          model: config.extractionModel ?? "gpt-4.1-nano",
+          model: config.extractionModel ?? "gpt-4o-mini",
           apiKey: config.apiKey,
           baseURL: config.baseUrl,
         },
