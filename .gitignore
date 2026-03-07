@@ -26,6 +26,9 @@ Thumbs.db
 # Logs
 *.log
 
+# Runtime databases (mem0, vector store)
+*.db
+
 # Markdown (block stray docs, whitelist agenttree content)
 *.md
 !README.md
