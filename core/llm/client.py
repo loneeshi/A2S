@@ -486,3 +486,127 @@ class ALFWorldAgent:
         """Reset conversation history for new episode"""
         self.conversation_history = []
         logger.debug("Reset agent conversation history")
+
+
+class StuLifeAgent:
+    """
+    LLM-powered agent for StuLife (Campus Life Benchmark) tasks
+
+    Uses an LLM to interact with campus life scenarios.
+    """
+
+    def __init__(
+        self, llm_client: Optional[LLMClient] = None, model: Optional[str] = None
+    ):
+        """
+        Initialize StuLife agent
+
+        Args:
+            llm_client: LLM client instance (will create default if not provided)
+            model: Model to use for action selection
+        """
+        if llm_client is None:
+            llm_client = LLMClient(default_model=model or "gpt-4o-mini")
+
+        self.llm = llm_client
+        self.model = model or llm_client.default_model
+        self.conversation_history: List[Dict[str, str]] = []
+
+        logger.info(f"Initialized StuLife agent with model: {self.model}")
+
+    def select_action(
+        self,
+        observation: str,
+        task_description: str,
+        max_history_turns: int = 10,
+    ) -> str:
+        """
+        Select an action based on current observation
+
+        Args:
+            observation: Current observation from environment
+            task_description: Description of the task to complete
+            max_history_turns: Maximum number of conversation turns to keep
+
+        Returns:
+            Selected action string
+
+        Raises:
+            Exception: If LLM fails to generate a response
+        """
+        # Build prompt
+        prompt = self._build_action_prompt(
+            observation=observation,
+            task_description=task_description,
+            history=self.conversation_history[-max_history_turns * 2:],
+        )
+
+        try:
+            response = self.llm.complete(
+                prompt=prompt,
+                model=self.model,
+                temperature=0.7,
+                max_tokens=1000,
+            )
+
+            action = response.content.strip()
+
+            # Update conversation history
+            self.conversation_history.append(
+                {
+                    "role": "user",
+                    "content": f"Observation: {observation[:200]}...",
+                }
+            )
+            self.conversation_history.append(
+                {"role": "assistant", "content": f"Action: {action[:200]}..."}
+            )
+
+            return action
+
+        except Exception as e:
+            logger.error(f"Failed to get LLM response: {e}")
+            raise
+
+    def _build_action_prompt(
+        self,
+        observation: str,
+        task_description: str,
+        history: List[Dict[str, str]],
+    ) -> str:
+        """Build prompt for action selection"""
+
+        prompt_parts = [
+            "You are a student assistant helping with campus life tasks.",
+            f"Your task: {task_description}",
+            "",
+            "Current situation:",
+            observation,
+            "",
+            "Instructions:",
+            "- Respond naturally as if you're helping with this campus task",
+            "- Be concise and direct in your response",
+            "- If it's a question, provide a clear answer",
+            "- If it's an action request, describe what you'll do",
+            "",
+        ]
+
+        # Add recent history if available
+        if history:
+            prompt_parts.extend(["Recent conversation:"])
+            for i in range(0, len(history), 2):
+                if i + 1 < len(history):
+                    user_msg = history[i]["content"]
+                    asst_msg = history[i + 1]["content"]
+                    prompt_parts.append(f"- {user_msg}")
+                    prompt_parts.append(f"  → {asst_msg}")
+            prompt_parts.append("")
+
+        prompt_parts.append("Your response:")
+
+        return "\n".join(prompt_parts)
+
+    def reset(self):
+        """Reset conversation history for new episode"""
+        self.conversation_history = []
+        logger.debug("Reset StuLife agent conversation history")

@@ -33,7 +33,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from core.ui_bridge import UIBridge
-from core.llm.client import LLMClient, ALFWorldAgent
+from core.llm.client import LLMClient, ALFWorldAgent, StuLifeAgent
 from core.generator.tree_builder import AgentTreeGenerator
 from core.optimizer.performance_monitor import (
     PerformanceMonitor,
@@ -141,6 +141,23 @@ class BenchmarkRunner:
                     logger.warning(f"ALFWorld warning: {w}")
             logger.info("ALFWorld environment check passed")
 
+        elif self.benchmark == "stulife":
+            from benchmarks.stulife import StuLifeAdapter
+
+            logger.info("Running StuLife environment pre-flight check...")
+            try:
+                adapter = StuLifeAdapter()
+                tasks = adapter.get_available_tasks()
+                if not tasks:
+                    raise RuntimeError("No tasks available in StuLife")
+                logger.info(f"StuLife environment check passed ({len(tasks)} tasks available)")
+                adapter.close()
+            except Exception as e:
+                msg = f"StuLife environment check failed: {e}"
+                logger.error(msg)
+                self.bridge.log(self.root_agent_id, "error", msg)
+                raise RuntimeError(msg)
+
         # Initialize ResultsRecorder run
         run_id = self.recorder.initialize_run(
             benchmark_name=self.benchmark,
@@ -189,6 +206,8 @@ class BenchmarkRunner:
         # ── Phase 2: Run benchmark episodes ─────────────────────
         if self.benchmark == "alfworld" and not self.simulated:
             self._run_alfworld_episodes(tree)
+        elif self.benchmark == "stulife" and not self.simulated:
+            self._run_stulife_episodes(tree)
         else:
             self._run_simulated_episodes(tree)
 
@@ -511,6 +530,193 @@ class BenchmarkRunner:
 
             self.bridge.llm_done(worker_id, episode_id, round_num=0)
             self.bridge.handoff(worker_id, self.root_agent_id, context_size=1)
+
+    def _run_stulife_episodes(self, tree):
+        """Run StuLife benchmark episodes."""
+        from benchmarks.stulife import StuLifeAdapter
+
+        worker_id = (
+            f"{self.root_agent_id}:{tree.workers[0].name}"
+            if tree.workers
+            else self.root_agent_id
+        )
+
+        # Initialize StuLife adapter
+        try:
+            adapter = StuLifeAdapter(max_round=self.max_steps)
+            available_tasks = adapter.get_available_tasks()
+            logger.info(f"✅ StuLife adapter loaded with {len(available_tasks)} tasks")
+        except Exception as e:
+            logger.error(f"❌ Failed to initialize StuLife adapter: {e}")
+            self.bridge.log(worker_id, "system", f"❌ StuLife initialization failed: {e}")
+            return
+
+        # Initialize LLM client and agent
+        try:
+            llm_client = LLMClient(default_model=self.model or "gpt-4o-mini")
+            agent = StuLifeAgent(llm_client=llm_client, model=self.model)
+            logger.info(f"✅ StuLife agent initialized with model: {agent.model}")
+        except Exception as e:
+            logger.error(f"❌ Failed to initialize StuLife agent: {e}")
+            self.bridge.log(worker_id, "system", f"❌ Agent initialization failed: {e}")
+            adapter.close()
+            return
+
+        # Run episodes
+        for ep in range(self.num_episodes):
+            episode_start = time.time()
+            episode_id = f"ep-{ep:03d}"
+
+            # Select task (cycle through available tasks)
+            task_id = available_tasks[ep % len(available_tasks)]
+
+            self.bridge.log(
+                worker_id,
+                "system",
+                f"🎯 Episode {ep + 1}/{self.num_episodes} - Task: {task_id}",
+            )
+
+            # Reset environment
+            try:
+                reset_result = adapter.reset(task_id=task_id)
+                observation = reset_result["observation"]
+                task_description = f"Task {task_id}"
+
+                # Get task info for better description
+                task_info = adapter.get_task_info(task_id)
+                if "instruction" in task_info:
+                    task_description = task_info["instruction"]
+
+                self.bridge.log(
+                    worker_id, "user", f"📋 Task: {task_description[:100]}..."
+                )
+                self.bridge.log(
+                    worker_id, "user", f"👀 Initial observation: {observation[:150]}..."
+                )
+
+                # Reset agent conversation history
+                agent.reset()
+
+            except Exception as e:
+                logger.error(f"❌ Failed to reset episode {ep}: {e}")
+                self.bridge.log(worker_id, "system", f"❌ Reset failed: {e}")
+                continue
+
+            # Run episode steps
+            success = False
+            total_reward = 0.0
+            step_count = 0
+
+            for step in range(self.max_steps):
+                step_count += 1
+
+                try:
+                    # Agent selects action
+                    self.bridge.log(
+                        worker_id, "system", f"🤔 Step {step + 1}/{self.max_steps}"
+                    )
+
+                    action = agent.select_action(
+                        observation=observation,
+                        task_description=task_description,
+                        max_history_turns=10,
+                    )
+
+                    self.bridge.log(worker_id, "assistant", f"💬 Action: {action[:200]}...")
+
+                    # Execute action in environment
+                    step_result = adapter.step(action)
+                    observation = step_result["observation"]
+                    done = step_result["done"]
+                    success = step_result.get("success", False)
+
+                    self.bridge.log(
+                        worker_id, "user", f"👀 Observation: {observation[:200]}..."
+                    )
+
+                    # Check if episode is done
+                    if done:
+                        status_emoji = "✅" if success else "❌"
+                        self.bridge.log(
+                            worker_id,
+                            "system",
+                            f"{status_emoji} Episode completed - Success: {success}",
+                        )
+                        break
+
+                except Exception as e:
+                    logger.error(f"❌ Step {step} failed: {e}")
+                    self.bridge.log(worker_id, "system", f"❌ Step failed: {e}")
+                    break
+
+            # Record episode results
+            episode_time = time.time() - episode_start
+
+            result = {
+                "episode": ep,
+                "task_id": task_id,
+                "success": success,
+                "steps": step_count,
+                "time": episode_time,
+                "reward": 1.0 if success else 0.0,
+            }
+
+            self.episode_results.append(result)
+            self.recorder.record_episode(
+                run_id=self._current_run_id,
+                episode_id=ep,
+                task_type=self.benchmark,
+                agent_used=worker_id,
+                status="success" if success else "failure",
+                steps=step_count,
+                reward=1.0 if success else 0.0,
+                duration=episode_time,
+            )
+
+            # Log summary
+            success_rate = sum(r["success"] for r in self.episode_results) / len(
+                self.episode_results
+            )
+            avg_steps = sum(r["steps"] for r in self.episode_results) / len(
+                self.episode_results
+            )
+
+            self.bridge.log(
+                worker_id,
+                "system",
+                f"📊 Episode {ep + 1} summary: Success={success}, Steps={step_count}, Time={episode_time:.1f}s",
+            )
+            self.bridge.log(
+                worker_id,
+                "system",
+                f"📈 Overall: Success rate={success_rate:.1%}, Avg steps={avg_steps:.1f}",
+            )
+
+            # Reflection for failures
+            if not success and self.reflection_agent:
+                try:
+                    failure_info = {
+                        "benchmark": "stulife",
+                        "task_id": task_id,
+                        "steps": step_count,
+                        "last_observation": observation[:500],
+                        "success_rate": success_rate,
+                    }
+                    refl = self.reflection_agent.analyze_failure(failure_info)
+                    self.bridge.log(
+                        worker_id,
+                        "system",
+                        f"🔍 Reflection: {refl.failure_type} → {refl.prompt_update_action.value}",
+                    )
+                except Exception as refl_err:
+                    logger.debug(f"Episode reflection skipped: {refl_err}")
+
+            self.bridge.llm_done(worker_id, episode_id, round_num=0)
+            self.bridge.handoff(worker_id, self.root_agent_id, context_size=1)
+
+        # Cleanup
+        adapter.close()
+        logger.info("✅ StuLife episodes completed")
 
     def _run_simulated_episodes(self, tree):
         """Run simulated episodes when real environment is unavailable."""
