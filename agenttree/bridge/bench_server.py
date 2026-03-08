@@ -54,25 +54,34 @@ def init_alfworld(config_path=None, split="train"):
 
 def init_stulife(config_path=None):
     """
-    Initialize StuLife environment.
-
-    Attempts to import the real CampusEnvironment from the ELL-StuLife codebase.
-    Falls back to a lightweight stub if the real one is unavailable.
+    Initialize StuLife environment using our StuLifeAdapter.
     """
     global _env
     try:
-        stulife_root = os.environ.get(
-            "STULIFE_ROOT",
-            str(PROJECT_ROOT.parent / "ELL-StuLife" / "Stulife"),
-        )
-        sys.path.insert(0, stulife_root)
-        from src.campus_env import CampusEnvironment  # type: ignore
+        from benchmarks.stulife.stulife_adapter import StuLifeAdapter
+        from benchmarks.stulife.logging import LoggingCoordinator
+        from datetime import datetime
 
-        logger.info("Loading real StuLife CampusEnvironment...")
-        _env = CampusEnvironment()
-        logger.info("StuLife (real) ready.")
+        logger.info("Initializing StuLife adapter...")
+        _env = StuLifeAdapter()
+
+        # Initialize three-tier logging
+        run_id = f"stulife_{datetime.now().strftime('%Y-%m-%dT%H-%M-%S-%f')}"
+        output_dir = PROJECT_ROOT / "results" / "stulife"
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        _env._logging_coordinator = LoggingCoordinator(
+            run_id=run_id,
+            benchmark="stulife",
+            model="gpt-4o-mini",  # Will be updated from TypeScript
+            output_dir=output_dir
+        )
+
+        logger.info(f"StuLife adapter ready with {len(_env.get_available_tasks())} tasks")
+        logger.info(f"Three-tier logging initialized: {run_id}")
     except Exception as e:
-        logger.warning(f"Real StuLife unavailable ({e}), using stub environment.")
+        logger.error(f"Failed to initialize StuLife adapter: {e}")
+        logger.warning("Falling back to stub environment")
         _env = StuLifeStub()
 
 
@@ -141,8 +150,25 @@ def env_reset():
             "admissible_commands": admissible,
         }
     elif _benchmark == "stulife":
-        task = _env.reset()
-        return {"task": task, "episode": _episode, "admissible_commands": []}
+        # Get available tasks and select one
+        available_tasks = _env.get_available_tasks()
+        task_id = available_tasks[_episode % len(available_tasks)]
+
+        # Reset with specific task
+        reset_result = _env.reset(task_id=task_id)
+        task = reset_result["observation"]
+
+        # Start logging for this episode
+        if hasattr(_env, '_logging_coordinator'):
+            episode_id = f"ep-{_episode:03d}"
+            _env._logging_coordinator.start_episode(
+                episode_id=episode_id,
+                task_id=task_id,
+                step=0
+            )
+            logger.info(f"Started logging for episode {episode_id}, task {task_id}")
+
+        return {"task": task, "episode": _episode, "task_id": task_id, "admissible_commands": []}
     else:
         return {"error": f"Unknown benchmark: {_benchmark}"}
 
@@ -153,10 +179,39 @@ def env_step(action: str):
         return result
     elif _benchmark == "stulife":
         result = _env.step(action)
+
+        # Update step counter in logging
+        if hasattr(_env, '_logging_coordinator') and hasattr(_env, '_step_counter'):
+            _env._step_counter = getattr(_env, '_step_counter', 0) + 1
+            _env._logging_coordinator.update_step(_env._step_counter)
+
+        # Handle result format
         if isinstance(result, dict):
+            # Check if episode is done
+            if result.get("done", False):
+                # End episode logging
+                if hasattr(_env, '_logging_coordinator'):
+                    session = _env.get_current_session()
+                    episode_id = f"ep-{_episode:03d}"
+                    _env._logging_coordinator.end_episode(
+                        episode_id=episode_id,
+                        session=session
+                    )
+                    logger.info(f"Ended logging for episode {episode_id}")
             return result
         # CampusEnvironment may return tuple (obs, reward, done, info)
         obs, reward, done, info = result
+
+        # End episode logging if done
+        if done and hasattr(_env, '_logging_coordinator'):
+            session = _env.get_current_session()
+            episode_id = f"ep-{_episode:03d}"
+            _env._logging_coordinator.end_episode(
+                episode_id=episode_id,
+                session=session
+            )
+            logger.info(f"Ended logging for episode {episode_id}")
+
         return {
             "observation": str(obs),
             "done": done,
@@ -222,6 +277,20 @@ class BridgeHandler(BaseHTTPRequestHandler):
                 self._send_json(result)
 
             elif self.path == "/shutdown":
+                # Finalize logging before shutdown
+                if _benchmark == "stulife" and _env and hasattr(_env, '_logging_coordinator'):
+                    try:
+                        result = _env._logging_coordinator.finalize()
+                        logger.info(f"✅ Three-tier logging finalized:")
+                        logger.info(f"   Tier 1: {result['tier1_runs_json']}")
+                        logger.info(f"   Tier 2: {result['tier2_worker_actions']}")
+                        logger.info(f"   Tier 3: {result['tier3_api_calls']}")
+                        logger.info(f"   Sessions: {result['session_count']}")
+                        logger.info(f"   Worker actions: {result['worker_action_count']}")
+                        logger.info(f"   API calls: {result['api_call_count']}")
+                    except Exception as e:
+                        logger.error(f"Failed to finalize logging: {e}")
+
                 self._send_json({"ok": True, "message": "Shutting down..."})
                 import threading
 
