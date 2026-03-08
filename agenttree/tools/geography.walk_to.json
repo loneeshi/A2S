@@ -1,0 +1,14 @@
+{
+  "id": "geography.walk_to",
+  "description": "Walk to a campus building or location",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "destination": {
+        "type": "string",
+        "description": "The building or location to walk to"
+      }
+    },
+    "required": ["destination"]
+  }
+}

@@ -1,0 +1,16 @@
+# Dependencies
+node_modules/
+
+# Runtime data (regenerated per run)
+runs/
+/memory/
+results/
+
+# Development docs (local only)
+develop_docs/
+
+# Memory logs
+*.jsonl
+
+# OS
+.DS_Store

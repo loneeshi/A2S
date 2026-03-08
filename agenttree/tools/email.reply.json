@@ -1,0 +1,18 @@
+{
+  "id": "email.reply",
+  "description": "Reply to an email",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "email_id": {
+        "type": "string",
+        "description": "The email ID to reply to"
+      },
+      "body": {
+        "type": "string",
+        "description": "Reply body content"
+      }
+    },
+    "required": ["email_id", "body"]
+  }
+}

@@ -193,9 +193,9 @@ class AlfworldAdapter:
         self.last_info = self.infos
         self.last_reward = 0.0
 
-        # Extract task description
-        if isinstance(self.obs, list) and len(self.obs) > 0:
-            task_description = self.obs[0].split("\n")[-1]
+        # Extract task description — use full observation for context
+        if isinstance(self.obs, (list, tuple)) and len(self.obs) > 0:
+            task_description = str(self.obs[0])
         else:
             task_description = str(self.obs)
 

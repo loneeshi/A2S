@@ -1,0 +1,18 @@
+{
+  "id": "map.find_optimal_path",
+  "description": "Find the optimal path between two campus locations",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "from_location": {
+        "type": "string",
+        "description": "Starting location name or ID"
+      },
+      "to_location": {
+        "type": "string",
+        "description": "Destination location name or ID"
+      }
+    },
+    "required": ["from_location", "to_location"]
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "id": "course.register",
+  "description": "Register for a course",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "course_id": {
+        "type": "string",
+        "description": "The course ID to register for"
+      }
+    },
+    "required": ["course_id"]
+  }
+}

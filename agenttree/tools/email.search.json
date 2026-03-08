@@ -1,0 +1,18 @@
+{
+  "id": "email.search",
+  "description": "Search emails by query string",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "query": {
+        "type": "string",
+        "description": "Search query (subject, sender, or keywords)"
+      },
+      "folder": {
+        "type": "string",
+        "description": "Mail folder to search (default: inbox)"
+      }
+    },
+    "required": ["query"]
+  }
+}

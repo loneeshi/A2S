@@ -1,0 +1,14 @@
+{
+  "id": "calendar.get_schedule",
+  "description": "Get the full schedule for a specific date",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "date": {
+        "type": "string",
+        "description": "The date to get the schedule for"
+      }
+    },
+    "required": ["date"]
+  }
+}

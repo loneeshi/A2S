@@ -1,0 +1,17 @@
+{
+  "id": "delegate",
+  "name": "delegate",
+  "description": "Delegate a task to a specific worker agent. Returns the worker's output and success status.",
+  "parameters": {
+    "worker_id": {
+      "type": "string",
+      "description": "The ID of the worker agent to delegate to (e.g. manipulation_worker, pick_heat_then_place_specialist)",
+      "required": true
+    },
+    "task": {
+      "type": "string",
+      "description": "The full task instruction to send to the worker. Include any context or guidance about strategy.",
+      "required": true
+    }
+  }
+}
