@@ -178,12 +178,29 @@ def env_step(action: str):
         result = _env.step(action)
         return result
     elif _benchmark == "stulife":
+        import time
+        start_time = time.time()
+
         result = _env.step(action)
 
-        # Update step counter in logging
-        if hasattr(_env, '_logging_coordinator') and hasattr(_env, '_step_counter'):
-            _env._step_counter = getattr(_env, '_step_counter', 0) + 1
+        # Update step counter and log worker action
+        if hasattr(_env, '_logging_coordinator'):
+            # Update step counter
+            if not hasattr(_env, '_step_counter'):
+                _env._step_counter = 0
+            _env._step_counter += 1
             _env._logging_coordinator.update_step(_env._step_counter)
+
+            # Log worker action (Tier 2)
+            duration_ms = (time.time() - start_time) * 1000
+            observation = result.get("observation", "") if isinstance(result, dict) else str(result[0])
+            _env._logging_coordinator.log_worker_action(
+                task_summary=f"Step {_env._step_counter}",
+                action_taken=action,
+                decision_rationale=observation[:200] if observation else "No observation",
+                tools_used=[action.split("(")[0]] if "(" in action else [action],
+                duration_ms=duration_ms,
+            )
 
         # Handle result format
         if isinstance(result, dict):
@@ -275,6 +292,31 @@ class BridgeHandler(BaseHTTPRequestHandler):
                     return
                 result = env_step(action)
                 self._send_json(result)
+
+            elif self.path == "/log_api_call":
+                # Tier 3: Log API call from TypeScript runtime
+                if _benchmark == "stulife" and _env and hasattr(_env, '_logging_coordinator'):
+                    try:
+                        request = body.get("request", {})
+                        response = body.get("response")
+                        usage = body.get("usage")
+                        latency_ms = body.get("latency_ms")
+                        error = body.get("error")
+
+                        call_id = _env._logging_coordinator.trace_api_call(
+                            request=request,
+                            response=response or {},
+                            usage=usage,
+                            cache_info=None,
+                            latency_ms=latency_ms,
+                            error=error,
+                        )
+                        self._send_json({"ok": True, "call_id": call_id})
+                    except Exception as e:
+                        logger.warning(f"Failed to log API call: {e}")
+                        self._send_json({"ok": False, "error": str(e)}, 500)
+                else:
+                    self._send_json({"ok": False, "error": "Logging not available"}, 400)
 
             elif self.path == "/shutdown":
                 # Finalize logging before shutdown

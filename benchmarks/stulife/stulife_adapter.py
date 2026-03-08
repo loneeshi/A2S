@@ -149,11 +149,24 @@ class StuLifeAdapter:
         if self.current_session is None:
             raise RuntimeError("Must call reset() before step()")
 
-        # Add agent response to session
+        # Add agent response to session (only if last message is not AGENT)
         from typings import ChatHistoryItem
-        self.current_session.chat_history.inject(
-            ChatHistoryItem(role=Role.AGENT, content=action)
-        )
+        chat_history = self.current_session.chat_history
+        length = chat_history.get_value_length()
+
+        # Check if we need to inject AGENT message
+        should_inject = True
+        if length > 0:
+            last_msg = chat_history.get_item_deep_copy(length - 1)
+            if last_msg.role == Role.AGENT:
+                # Last message is already AGENT, don't inject
+                should_inject = False
+                logger.debug(f"Skipping AGENT inject - last message is already AGENT")
+
+        if should_inject:
+            self.current_session.chat_history.inject(
+                ChatHistoryItem(role=Role.AGENT, content=action)
+            )
 
         # Let task interact (execute action and get response)
         self.campus_task.interact(self.current_session)

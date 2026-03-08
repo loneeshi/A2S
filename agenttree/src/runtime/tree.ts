@@ -41,7 +41,8 @@ import { join } from "node:path"
 
 export interface TreeRuntimeOptions {
   baseDir: string
-  llmOptions: LLMClientOptions
+  llmOptions?: LLMClientOptions
+  llmClient?: LLMClient
   toolHandlers?: Record<string, ToolHandler>
   extensionThreshold?: number
   mem0?: Mem0Bridge
@@ -65,7 +66,14 @@ export class TreeRuntime {
 
   constructor(options: TreeRuntimeOptions) {
     this.baseDir = options.baseDir
-    this.llm = new LLMClient(options.llmOptions)
+    // Use provided client or create new one from options
+    if (options.llmClient) {
+      this.llm = options.llmClient
+    } else if (options.llmOptions) {
+      this.llm = new LLMClient(options.llmOptions)
+    } else {
+      throw new Error("Either llmClient or llmOptions must be provided")
+    }
     this.toolExecutor = new ToolExecutor()
     this.toolRegistry = new ToolRegistry(join(options.baseDir, "tools"))
     this.skillManager = new SkillManager(join(options.baseDir, "skills"))

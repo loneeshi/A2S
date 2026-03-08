@@ -25,6 +25,7 @@
 
 import { TreeRuntime } from "../src/runtime/tree"
 import { BenchmarkBridge } from "../src/bridge/client"
+import { LoggingLLMClient } from "../src/llm/logging_client"
 import { join } from "node:path"
 
 const BASE_DIR = join(import.meta.dirname ?? __dirname, "..")
@@ -268,9 +269,21 @@ async function main() {
 
   console.log("\n2. Creating TreeRuntime...")
   const baseURL = process.env.OPENAI_BASE_URL || undefined
+
+  // Create LoggingLLMClient for Tier 3 logging (only for StuLife)
+  const llmClient = config.benchmark === "stulife"
+    ? new LoggingLLMClient({
+        apiKey,
+        baseURL,
+        defaultModel: config.model,
+        loggingEndpoint: `http://127.0.0.1:${config.port}`,
+      })
+    : undefined
+
   const tree = new TreeRuntime({
     baseDir: BASE_DIR,
-    llmOptions: {
+    llmClient,
+    llmOptions: llmClient ? undefined : {
       apiKey,
       baseURL,
       defaultModel: config.model,
