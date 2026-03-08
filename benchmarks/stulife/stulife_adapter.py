@@ -91,6 +91,17 @@ class StuLifeAdapter:
         Returns:
             Dictionary with task description and initial state
         """
+        # Release previous task if exists
+        if self.current_session is not None:
+            try:
+                self.campus_task.release()
+            except Exception as e:
+                logger.warning(f"Release failed: {e}, forcing cleanup")
+            # Force cleanup of internal state (access private attributes)
+            self.campus_task.current_sample_index = None
+            self.campus_task._Task__current_dataset_item = None
+            self.campus_task.current_round = 0
+
         # Select task
         if task_id is None:
             if not self.available_tasks:
@@ -214,6 +225,15 @@ class StuLifeAdapter:
             "difficulty": dataset_item.get_difficulty_level(),
             "skills": dataset_item.get_skill_list()
         }
+
+    def get_current_session(self) -> Optional[Any]:
+        """
+        Get the current Session object
+
+        Returns:
+            Current Session object or None if no session is active
+        """
+        return self.current_session
 
     def close(self):
         """Clean up resources"""
