@@ -29,10 +29,12 @@ Thumbs.db
 # Runtime databases (mem0, vector store)
 *.db
 
-# Markdown (block stray docs, whitelist agenttree content)
+# Markdown (block stray docs, whitelist tree & system & docs content)
 *.md
 !README.md
-!agenttree/**/*.md
+!trees/**/*.md
+!system/**/*.md
+!docs/**/*.md
 
 # YAML configs (keep)
 !*.yaml
@@ -40,6 +42,12 @@ Thumbs.db
 
 # Development docs (local only)
 develop_docs/
+
+# Runtime worker directories (temp, per-run)
+system/runs/
+
+# Experiment outputs (large traces, generated at runtime)
+experiments/
 
 # Secrets
 *api_key*

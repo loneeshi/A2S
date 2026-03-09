@@ -7,9 +7,11 @@ This adapter provides fast reset times (0.7-0.9s) and proper ALFWorld integratio
 
 import os
 import sys
+import random
 import yaml
 import logging
 from typing import Optional, Dict, Any, List
+from collections import defaultdict
 
 # Add ALFWorld to path if needed
 alfworld_path = os.path.join(os.path.dirname(__file__), "..", "..", "..", "alfworld")
@@ -31,13 +33,21 @@ class AlfworldAdapter:
     - LLM agent integration
     """
 
-    def __init__(self, config_path: Optional[str] = None, train_eval: str = "train"):
+    def __init__(
+        self,
+        config_path: Optional[str] = None,
+        train_eval: str = "train",
+        stratified_per_type: Optional[int] = None,
+        seed: int = 42,
+    ):
         """
         Initialize ALFWorld adapter
 
         Args:
             config_path: Path to ALFWorld config YAML file (optional, uses default)
             train_eval: 'train', 'eval_in_distribution', or 'eval_out_of_distribution'
+            stratified_per_type: If set, sample this many games per task type (stratified)
+            seed: Random seed for stratified sampling
         """
         self.train_eval = train_eval
 
@@ -47,6 +57,11 @@ class AlfworldAdapter:
         # Initialize environment
         logger.info("Initializing ALFWorld environment...")
         self.env_manager = self._create_environment()
+
+        # Apply stratified sampling before init_env registers games
+        if stratified_per_type is not None and stratified_per_type > 0:
+            self._apply_stratified_sampling(stratified_per_type, seed)
+
         self.env = self.env_manager.init_env(batch_size=1)
 
         # Internal state
@@ -180,6 +195,47 @@ class AlfworldAdapter:
             logger.error(f"Failed to create {env_type}: {e}")
             logger.info("Falling back to AlfredTWEnv")
             return alf_env.AlfredTWEnv(self.config, train_eval=self.train_eval)
+
+    def _apply_stratified_sampling(self, per_type: int, seed: int = 42):
+        """
+        Replace env_manager.game_files with a stratified sample.
+
+        Groups games by task type prefix (e.g. 'look_at_obj_in_light',
+        'pick_and_place_simple'), samples `per_type` from each group,
+        and shuffles the result.
+
+        ALFWorld task type prefixes (6 types in train split):
+          look_at_obj_in_light, pick_and_place_simple,
+          pick_two_obj_and_place, pick_clean_then_place_in_recep,
+          pick_heat_then_place_in_recep, pick_cool_then_place_in_recep
+        Note: pick_and_place_with_movable_recep is merged into pick_and_place_simple by the env
+        """
+        rng = random.Random(seed)
+        game_files = self.env_manager.game_files
+
+        # Group by task type prefix (directory name up to first dash-separated object)
+        groups: Dict[str, List[str]] = defaultdict(list)
+        for gf in game_files:
+            # game_file path: .../train/pick_cool_then_place_in_recep-Cup-None-Shelf-1/trial_T.../game.tw-pddl
+            # Go up 2 levels to get the task-type directory, then extract prefix before first dash
+            task_dir = os.path.basename(os.path.dirname(os.path.dirname(gf)))
+            task_type = task_dir.split("-")[0] if "-" in task_dir else task_dir
+            groups[task_type].append(gf)
+
+        sampled = []
+        for task_type, files in sorted(groups.items()):
+            n = min(per_type, len(files))
+            sampled.extend(rng.sample(files, n))
+            logger.info(f"  Stratified: {task_type} → {n}/{len(files)} games")
+
+        rng.shuffle(sampled)
+
+        self.env_manager.game_files = sampled
+        self.env_manager.num_games = len(sampled)
+        logger.info(
+            f"Stratified sampling: {len(sampled)} games total "
+            f"({per_type}/type × {len(groups)} types)"
+        )
 
     def reset(self) -> str:
         """

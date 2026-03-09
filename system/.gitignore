@@ -1,0 +1,9 @@
+# Dependencies
+node_modules/
+
+# Runtime temp dirs
+runs/
+.snapshot-temp/
+
+# OS
+.DS_Store
