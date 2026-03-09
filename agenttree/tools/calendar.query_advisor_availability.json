@@ -1,0 +1,18 @@
+{
+  "id": "calendar.query_advisor_availability",
+  "description": "Check an advisor's availability on a specific date",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "advisor_id": {
+        "type": "string",
+        "description": "Advisor ID (e.g., 'T0001')"
+      },
+      "date": {
+        "type": "string",
+        "description": "Date in format 'Week X, Day' (e.g., 'Week 4, Tuesday')"
+      }
+    },
+    "required": ["advisor_id", "date"]
+  }
+}

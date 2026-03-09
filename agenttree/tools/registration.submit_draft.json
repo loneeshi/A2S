@@ -1,0 +1,9 @@
+{
+  "id": "registration.submit_draft",
+  "description": "Submit your draft schedule for registration. Must meet minimum course requirements before submitting.",
+  "parameters": {
+    "type": "object",
+    "properties": {},
+    "required": []
+  }
+}

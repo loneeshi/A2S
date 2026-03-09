@@ -56,14 +56,16 @@ def init_stulife(config_path=None):
     """
     Initialize StuLife environment using our StuLifeAdapter.
     """
-    global _env
+    global _env, _episode
+    # Reset episode counter for new benchmark run
+    _episode = 0
     try:
         from benchmarks.stulife.stulife_adapter import StuLifeAdapter
         from benchmarks.stulife.logging import LoggingCoordinator
         from datetime import datetime
 
         logger.info("Initializing StuLife adapter...")
-        _env = StuLifeAdapter()
+        _env = StuLifeAdapter(max_round=50)
 
         # Initialize three-tier logging
         run_id = f"stulife_{datetime.now().strftime('%Y-%m-%dT%H-%M-%S-%f')}"
@@ -205,11 +207,18 @@ def env_step(action: str):
         # Handle result format
         if isinstance(result, dict):
             # Check if episode is done
-            if result.get("done", False):
+            done = result.get("done", False)
+            logger.info(f"[DEBUG] env_step result: done={done}, has_logging={hasattr(_env, '_logging_coordinator')}")
+            if done:
                 # End episode logging
                 if hasattr(_env, '_logging_coordinator'):
                     session = _env.get_current_session()
                     episode_id = f"ep-{_episode:03d}"
+                    logger.info(f"[DEBUG] Calling end_episode for {episode_id}, session={'None' if session is None else session.sample_index}")
+                    if session is None:
+                        logger.warning(f"Session is None for episode {episode_id}")
+                    else:
+                        logger.info(f"Got session for episode {episode_id}: {session.sample_index}")
                     _env._logging_coordinator.end_episode(
                         episode_id=episode_id,
                         session=session
@@ -317,6 +326,24 @@ class BridgeHandler(BaseHTTPRequestHandler):
                         self._send_json({"ok": False, "error": str(e)}, 500)
                 else:
                     self._send_json({"ok": False, "error": "Logging not available"}, 400)
+
+            elif self.path == "/finalize":
+                # Finalize current episode (save session data)
+                if _benchmark == "stulife" and _env and hasattr(_env, '_logging_coordinator'):
+                    try:
+                        session = _env.get_current_session()
+                        episode_id = f"ep-{_episode:03d}"
+                        logger.info(f"[FINALIZE] Episode {episode_id}, session={'None' if session is None else session.sample_index}")
+                        _env._logging_coordinator.end_episode(
+                            episode_id=episode_id,
+                            session=session
+                        )
+                        self._send_json({"ok": True})
+                    except Exception as e:
+                        logger.error(f"Failed to finalize episode: {e}")
+                        self._send_json({"ok": False, "error": str(e)}, 500)
+                else:
+                    self._send_json({"ok": True})  # No-op for non-StuLife
 
             elif self.path == "/shutdown":
                 # Finalize logging before shutdown

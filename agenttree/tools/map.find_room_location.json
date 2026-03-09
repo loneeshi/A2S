@@ -1,0 +1,22 @@
+{
+  "id": "map.find_room_location",
+  "description": "Find the location of a specific room",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "room_query": {
+        "type": "string",
+        "description": "Room name or number to search for"
+      },
+      "building_id": {
+        "type": "string",
+        "description": "Optional: specific building to search in"
+      },
+      "zone": {
+        "type": "string",
+        "description": "Optional: zone to search in"
+      }
+    },
+    "required": ["room_query"]
+  }
+}

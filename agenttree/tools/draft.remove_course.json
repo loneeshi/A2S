@@ -1,0 +1,14 @@
+{
+  "id": "draft.remove_course",
+  "description": "Remove a course from your draft schedule",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "section_id": {
+        "type": "string",
+        "description": "Course section ID to remove"
+      }
+    },
+    "required": ["section_id"]
+  }
+}

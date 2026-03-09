@@ -1,14 +1,14 @@
 {
   "id": "map.find_building_id",
-  "description": "Find a campus building's ID by its name",
+  "description": "Find a campus building's ID by its name or alias",
   "parameters": {
     "type": "object",
     "properties": {
-      "name": {
+      "building_name": {
         "type": "string",
-        "description": "The building name to look up (e.g., 'library', 'science hall')"
+        "description": "The building name or alias to look up (e.g., 'Grand Central Library', 'Science Hall')"
       }
     },
-    "required": ["name"]
+    "required": ["building_name"]
   }
 }

@@ -1,0 +1,19 @@
+{
+  "id": "draft.assign_pass",
+  "description": "Assign a priority pass to a drafted course. Use S-Pass for popularity 95-99, A-Pass for <95, B-Pass for <85",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "section_id": {
+        "type": "string",
+        "description": "Course section ID"
+      },
+      "pass_type": {
+        "type": "string",
+        "enum": ["S-Pass", "A-Pass", "B-Pass"],
+        "description": "Priority pass type"
+      }
+    },
+    "required": ["section_id", "pass_type"]
+  }
+}

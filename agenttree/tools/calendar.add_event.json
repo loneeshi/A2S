@@ -1,26 +1,30 @@
 {
   "id": "calendar.add_event",
-  "description": "Add an event to the calendar",
+  "description": "Add an event to a calendar. Use 'self' for personal calendar or email address for others.",
   "parameters": {
     "type": "object",
     "properties": {
-      "title": {
+      "calendar_id": {
+        "type": "string",
+        "description": "Calendar ID: 'self' for personal calendar, or email address for others"
+      },
+      "event_title": {
         "type": "string",
         "description": "Event title"
       },
-      "date": {
+      "location": {
         "type": "string",
-        "description": "Event date (e.g., 'Monday', 'Week 2 Tuesday')"
+        "description": "Event location"
       },
       "time": {
         "type": "string",
-        "description": "Event time (e.g., '14:00')"
+        "description": "Event time in format 'Week X, Day, HH:MM-HH:MM' (e.g., 'Week 3, Monday, 15:00-16:00')"
       },
-      "duration": {
+      "description": {
         "type": "string",
-        "description": "Event duration (e.g., '1h', '30m')"
+        "description": "Optional event description"
       }
     },
-    "required": ["title", "date", "time"]
+    "required": ["calendar_id", "event_title", "location", "time"]
   }
 }

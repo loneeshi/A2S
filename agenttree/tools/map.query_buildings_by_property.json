@@ -1,0 +1,22 @@
+{
+  "id": "map.query_buildings_by_property",
+  "description": "Query buildings based on properties like zone, type, or amenities",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "zone": {
+        "type": "string",
+        "description": "Zone name (e.g., 'Academic Zone', 'Residential Zone')"
+      },
+      "building_type": {
+        "type": "string",
+        "description": "Building type (e.g., 'Academic', 'Residential', 'Administrative')"
+      },
+      "amenity": {
+        "type": "string",
+        "description": "Amenity to search for (e.g., 'Coffee Shop', 'Library', 'Gym')"
+      }
+    },
+    "required": []
+  }
+}

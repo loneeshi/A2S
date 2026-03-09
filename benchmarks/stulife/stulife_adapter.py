@@ -43,9 +43,11 @@ class StuLifeAdapter:
             data_dir: Path to StuLife data directory (optional)
             max_round: Maximum interaction rounds per task
         """
-        # Set data directory
+        # Set data directory - use task_data with full dataset
         if data_dir is None:
-            data_dir = stulife_src_path / "tasks" / "instance" / "campus_life_bench" / "data"
+            # Use task_data directory (has tasks.json + background/ with courses.json)
+            data_dir = stulife_src_path.parent.parent / "task_data"
+            logger.info(f"✅ Using StuLife data directory: {data_dir}")
         self.data_dir = Path(data_dir)
 
         # Create chat history factory
@@ -246,6 +248,10 @@ class StuLifeAdapter:
         Returns:
             Current Session object or None if no session is active
         """
+        if self.current_session is None:
+            logger.warning("get_current_session() called but current_session is None")
+        else:
+            logger.info(f"get_current_session() returning session for task: {self.current_session.sample_index}")
         return self.current_session
 
     def close(self):

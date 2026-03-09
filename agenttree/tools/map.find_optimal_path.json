@@ -1,18 +1,22 @@
 {
   "id": "map.find_optimal_path",
-  "description": "Find the optimal path between two campus locations",
+  "description": "Find the optimal path between two campus buildings",
   "parameters": {
     "type": "object",
     "properties": {
-      "from_location": {
+      "source_building_id": {
         "type": "string",
-        "description": "Starting location name or ID"
+        "description": "Starting building ID (e.g., 'B083')"
       },
-      "to_location": {
+      "target_building_id": {
         "type": "string",
-        "description": "Destination location name or ID"
+        "description": "Destination building ID (e.g., 'B001')"
+      },
+      "constraints": {
+        "type": "object",
+        "description": "Optional constraints for path finding"
       }
     },
-    "required": ["from_location", "to_location"]
+    "required": ["source_building_id", "target_building_id"]
   }
 }

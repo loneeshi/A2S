@@ -214,6 +214,9 @@ async function runEpisode(
     console.log(`  ERROR: ${error.slice(0, 120)}`)
   }
 
+  // Finalize episode (important for StuLife to save session data)
+  await bridge.finalizeEpisode()
+
   return { episode: episodeNum, task, success, steps, agentUsed: worker, error }
 }
 

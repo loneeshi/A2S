@@ -1,0 +1,18 @@
+{
+  "id": "calendar.view_schedule",
+  "description": "View events on a specific date for a calendar",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "calendar_id": {
+        "type": "string",
+        "description": "Calendar ID: 'self' for personal calendar, or email address for others"
+      },
+      "date": {
+        "type": "string",
+        "description": "Date in format 'Week X, Day' (e.g., 'Week 3, Monday')"
+      }
+    },
+    "required": ["calendar_id", "date"]
+  }
+}

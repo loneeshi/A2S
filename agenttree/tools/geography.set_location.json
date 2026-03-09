@@ -1,0 +1,14 @@
+{
+  "id": "geography.set_location",
+  "description": "Set your location to a specific building (for testing/debugging)",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "building_id": {
+        "type": "string",
+        "description": "Building ID to set as current location"
+      }
+    },
+    "required": ["building_id"]
+  }
+}

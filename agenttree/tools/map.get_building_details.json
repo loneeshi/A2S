@@ -1,0 +1,14 @@
+{
+  "id": "map.get_building_details",
+  "description": "Get all details for a specific building",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "building_id": {
+        "type": "string",
+        "description": "Building ID (e.g., 'B001')"
+      }
+    },
+    "required": ["building_id"]
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "id": "draft.view",
+  "description": "View your current draft schedule with all added courses and assigned passes",
+  "parameters": {
+    "type": "object",
+    "properties": {},
+    "required": []
+  }
+}

@@ -1,5 +1,5 @@
 {
-  "id": "email.reply",
+  "id": "email.reply_email",
   "description": "Reply to an email",
   "parameters": {
     "type": "object",

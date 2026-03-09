@@ -137,6 +137,20 @@ export class BenchmarkBridge {
   }
 
   /**
+   * Finalize the current episode (notify server that episode is done)
+   * This is important for StuLife to save session data
+   */
+  async finalizeEpisode(): Promise<void> {
+    if (this.benchmark === "stulife") {
+      try {
+        await this.post("/finalize", {})
+      } catch (error) {
+        console.warn("Failed to finalize episode:", error)
+      }
+    }
+  }
+
+  /**
    * Build tool handlers that map env.* tool calls → benchmark step() calls.
    *
    * ALFWorld actions are plain text commands like "go to fridge 1", "take apple 1 from countertop 2".
@@ -222,59 +236,159 @@ export class BenchmarkBridge {
   private createStuLifeHandlers(): Record<string, ToolHandler> {
     const bridge = this
 
-    const stuLifeCall = async (method: string, args: Record<string, unknown>): Promise<string> => {
+    // Helper function to build StuLife action format: <action>Action: method(k="v", k="v")</action>
+    const buildAction = (method: string, args: Record<string, unknown>): string => {
       const argsStr = Object.entries(args)
         .filter(([, v]) => v !== undefined && v !== "")
         .map(([k, v]) => `${k}=${JSON.stringify(v)}`)
         .join(", ")
-      const action = `${method}(${argsStr})`
+      return `<action>Action: ${method}(${argsStr})</action>`
+    }
+
+    const stuLifeCall = async (method: string, args: Record<string, unknown>): Promise<string> => {
+      const action = buildAction(method, args)
       const result = await bridge.step(action)
       return result.observation
     }
 
     return {
+      // Map System
       "map.find_building_id": async (args) =>
         stuLifeCall("map.find_building_id", args),
+      "map.get_building_details": async (args) =>
+        stuLifeCall("map.get_building_details", args),
+      "map.find_room_location": async (args) =>
+        stuLifeCall("map.find_room_location", args),
       "map.find_optimal_path": async (args) =>
         stuLifeCall("map.find_optimal_path", args),
+      "map.query_buildings_by_property": async (args) =>
+        stuLifeCall("map.query_buildings_by_property", args),
+
+      // Geography System
       "geography.walk_to": async (args) =>
         stuLifeCall("geography.walk_to", args),
       "geography.get_current_location": async () =>
         stuLifeCall("geography.get_current_location", {}),
+      "geography.set_location": async (args) =>
+        stuLifeCall("geography.set_location", args),
+
+      // Email System - map to StuLife method names
       "email.send": async (args) =>
-        stuLifeCall("email.send", args),
+        stuLifeCall("email.send_email", args),
       "email.search": async (args) =>
-        stuLifeCall("email.search", args),
+        stuLifeCall("email.view_inbox", args),
       "email.read": async (args) =>
-        stuLifeCall("email.read", args),
+        stuLifeCall("email.view_inbox", args),
       "email.reply": async (args) =>
-        stuLifeCall("email.reply", args),
+        stuLifeCall("email.reply_email", args),
       "email.forward": async (args) =>
-        stuLifeCall("email.forward", args),
-      "course.search": async (args) =>
-        stuLifeCall("course.search", args),
-      "course.get_details": async (args) =>
-        stuLifeCall("course.get_details", args),
-      "course.check_prerequisites": async (args) =>
-        stuLifeCall("course.check_prerequisites", args),
-      "course.check_conflicts": async (args) =>
-        stuLifeCall("course.check_conflicts", args),
-      "course.register": async (args) =>
-        stuLifeCall("course.register", args),
-      "course.drop": async (args) =>
-        stuLifeCall("course.drop", args),
+        stuLifeCall("email.send_email", args),
+      "email.delete": async (args) =>
+        stuLifeCall("email.delete_email", args),
+
+      // Calendar System
       "calendar.add_event": async (args) =>
         stuLifeCall("calendar.add_event", args),
+      "calendar.remove_event": async (args) =>
+        stuLifeCall("calendar.remove_event", args),
+      "calendar.update_event": async (args) =>
+        stuLifeCall("calendar.update_event", args),
+      "calendar.view_schedule": async (args) =>
+        stuLifeCall("calendar.view_schedule", args),
       "calendar.search_events": async (args) =>
-        stuLifeCall("calendar.search_events", args),
+        stuLifeCall("calendar.view_schedule", args),
       "calendar.get_schedule": async (args) =>
-        stuLifeCall("calendar.get_schedule", args),
+        stuLifeCall("calendar.view_schedule", args),
+      "calendar.query_advisor_availability": async (args) =>
+        stuLifeCall("calendar.query_advisor_availability", args),
+
+      // Course Selection System
+      "course.search": async (args) => {
+        // Convert query parameter to filters format
+        const filters: Record<string, unknown> = {}
+        if (args.query) {
+          const query = String(args.query)
+          // If query looks like a course code (contains numbers or hyphens), use course_code filter
+          // Otherwise use course_name filter
+          if (/[0-9-]/.test(query)) {
+            filters.course_code = query
+          } else {
+            filters.course_name = query
+          }
+        }
+        if (args.department) {
+          filters.course_code = args.department
+        }
+        return stuLifeCall("course_selection.browse_courses", Object.keys(filters).length > 0 ? { filters } : {})
+      },
+      "course.get_details": async (args) => {
+        const filters: Record<string, unknown> = {}
+        if (args.course_id) {
+          filters.course_code = args.course_id
+        }
+        return stuLifeCall("course_selection.browse_courses", Object.keys(filters).length > 0 ? { filters } : {})
+      },
+      "course.check_prerequisites": async (args) =>
+        stuLifeCall("course_selection.browse_courses", {}),
+      "course.check_conflicts": async (args) =>
+        stuLifeCall("draft.view", {}),
+      "course.register": async (args) =>
+        stuLifeCall("draft.add_course", args),
+      "course.drop": async (args) =>
+        stuLifeCall("draft.remove_course", args),
+
+      // Draft System
+      "draft.add_course": async (args) =>
+        stuLifeCall("draft.add_course", args),
+      "draft.remove_course": async (args) =>
+        stuLifeCall("draft.remove_course", args),
+      "draft.assign_pass": async (args) =>
+        stuLifeCall("draft.assign_pass", args),
+      "draft.view": async () =>
+        stuLifeCall("draft.view", {}),
+
+      // Registration System
+      "registration.submit_draft": async () =>
+        stuLifeCall("registration.submit_draft", {}),
+
+      // Reservation System
       "reservation.make": async (args) =>
-        stuLifeCall("reservation.make", args),
+        stuLifeCall("reservation.make_booking", args),
       "reservation.check_availability": async (args) =>
-        stuLifeCall("reservation.check_availability", args),
+        stuLifeCall("reservation.query_availability", args),
       "reservation.cancel": async (args) =>
-        stuLifeCall("reservation.cancel", args),
+        stuLifeCall("reservation.make_booking", args),
+      "reservation.query_availability": async (args) =>
+        stuLifeCall("reservation.query_availability", args),
+      "reservation.make_booking": async (args) =>
+        stuLifeCall("reservation.make_booking", args),
+
+      // Bibliography System
+      "bibliography.list_chapters": async (args) =>
+        stuLifeCall("bibliography.list_chapters", args),
+      "bibliography.list_sections": async (args) =>
+        stuLifeCall("bibliography.list_sections", args),
+      "bibliography.list_articles": async (args) =>
+        stuLifeCall("bibliography.list_articles", args),
+      "bibliography.view_article": async (args) =>
+        stuLifeCall("bibliography.view_article", args),
+
+      // Data System
+      "data_system.list_by_category": async (args) =>
+        stuLifeCall("data_system.list_by_category", args),
+      "data_system.query_by_identifier": async (args) =>
+        stuLifeCall("data_system.query_by_identifier", args),
+      "data_system.list_books_by_category": async (args) =>
+        stuLifeCall("data_system.list_books_by_category", args),
+      "data_system.search_books": async (args) =>
+        stuLifeCall("data_system.search_books", args),
+
+      // Special: finish action
+      "finish": async () => {
+        const action = "<action>Action: finish()</action>"
+        const result = await bridge.step(action)
+        return result.observation
+      },
     }
   }
 

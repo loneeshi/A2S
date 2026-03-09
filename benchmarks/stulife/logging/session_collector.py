@@ -47,8 +47,9 @@ class SessionCollector:
             logger.warning("Attempted to add None session, skipping")
             return
 
+        logger.info(f"Adding session for task: {session.sample_index}")
         self.sessions.append(session)
-        logger.debug(f"Added session for task: {session.sample_index}")
+        logger.debug(f"Total sessions collected: {len(self.sessions)}")
 
         # Real-time write: append to file immediately
         self._append_to_file(session)

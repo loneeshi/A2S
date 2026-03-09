@@ -1,0 +1,14 @@
+{
+  "id": "draft.add_course",
+  "description": "Add a course to your draft schedule using the section_id from browse_courses results",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "section_id": {
+        "type": "string",
+        "description": "Course section ID (e.g., 'WXK003111107')"
+      }
+    },
+    "required": ["section_id"]
+  }
+}

@@ -105,8 +105,11 @@ class LoggingCoordinator:
         """
         # Add session to collector if provided
         if session is not None:
+            logger.info(f"end_episode: Adding session for {episode_id}, task: {session.sample_index}")
             self.session_collector.add_session(session)
             logger.debug(f"Added session for episode: {episode_id}")
+        else:
+            logger.warning(f"end_episode: Session is None for {episode_id}, cannot save to tier1_runs.json")
 
         # Clear context
         clear_logging_context()

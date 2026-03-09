@@ -1,0 +1,15 @@
+{
+  "id": "email.view_inbox",
+  "description": "View emails in your inbox or other folders",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "folder": {
+        "type": "string",
+        "enum": ["inbox", "sent", "trash"],
+        "description": "Email folder to view (default: inbox)"
+      }
+    },
+    "required": []
+  }
+}

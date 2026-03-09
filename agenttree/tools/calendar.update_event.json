@@ -1,0 +1,22 @@
+{
+  "id": "calendar.update_event",
+  "description": "Update an existing calendar event",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "calendar_id": {
+        "type": "string",
+        "description": "Calendar ID"
+      },
+      "event_id": {
+        "type": "string",
+        "description": "Event ID to update"
+      },
+      "new_details": {
+        "type": "object",
+        "description": "Dictionary with new event details (e.g., {'location': 'Room 102', 'time': 'Week 3, Monday, 14:00-15:00'})"
+      }
+    },
+    "required": ["calendar_id", "event_id", "new_details"]
+  }
+}

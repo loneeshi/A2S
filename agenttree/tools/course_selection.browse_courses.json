@@ -1,0 +1,28 @@
+{
+  "id": "course_selection.browse_courses",
+  "description": "Browse available courses with optional filters. Returns list of courses with section_id, course_name, course_code, credits, time, location, and popularity.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "filters": {
+        "type": "object",
+        "description": "Optional filters to narrow down course search",
+        "properties": {
+          "course_name": {
+            "type": "string",
+            "description": "Partial match for course name (e.g., 'Programming', 'Math', 'Introduction')"
+          },
+          "course_code": {
+            "type": "string",
+            "description": "Partial match for SHORT course code (e.g., 'CS', 'MATH', 'PHYS')"
+          },
+          "credits": {
+            "type": "string",
+            "description": "Filter by credits (e.g., '<=3', '>=4')"
+          }
+        }
+      }
+    },
+    "required": []
+  }
+}

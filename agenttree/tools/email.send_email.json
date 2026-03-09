@@ -1,5 +1,5 @@
 {
-  "id": "email.send",
+  "id": "email.send_email",
   "description": "Send an email to a recipient",
   "parameters": {
     "type": "object",

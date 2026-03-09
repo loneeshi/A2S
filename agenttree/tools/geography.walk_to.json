@@ -1,14 +1,14 @@
 {
   "id": "geography.walk_to",
-  "description": "Walk to a campus building or location",
+  "description": "Walk along a calculated path to a destination",
   "parameters": {
     "type": "object",
     "properties": {
-      "destination": {
-        "type": "string",
-        "description": "The building or location to walk to"
+      "path_info": {
+        "type": "object",
+        "description": "Path object returned by map.find_optimal_path"
       }
     },
-    "required": ["destination"]
+    "required": ["path_info"]
   }
 }

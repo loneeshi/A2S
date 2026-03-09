@@ -1,0 +1,9 @@
+{
+  "id": "finish",
+  "description": "Call this when you have completed the task. This signals that you believe all objectives have been accomplished.",
+  "parameters": {
+    "type": "object",
+    "properties": {},
+    "required": []
+  }
+}
